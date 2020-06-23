@@ -5,9 +5,13 @@
 - Paper: https://openreview.net/pdf?id=r1lyTjAqYX (R2D2)
 """
 
+import datetime
+import os
+import pickle
 import time
 from typing import Tuple
 
+from PIL import Image
 import numpy as np
 import torch
 import wandb
@@ -232,7 +236,19 @@ class R2D1Agent(DQNAgent):
             test_num = self.args.interim_test_num
         else:
             test_num = self.args.episode_num
+
+        if self.args.save_experience:
+            NOWTIMES = datetime.datetime.now()
+            curr_time = NOWTIMES.strftime("%y%m%d_%H%M%S")
+            state_dir = "./data/experience/pong/{}/state/".format(curr_time)
+            next_state_dir = "./data/experience/pong/{}/next_state/".format(curr_time)
+            a_r_d_dir = "./data/experience/pong/{}/".format(curr_time)
+            os.makedirs(os.path.join(state_dir))
+            os.makedirs(os.path.join(next_state_dir))
+
         score_list = []
+        a_r_d_list = []
+        test_total_step = 0
         for i_episode in range(test_num):
             hidden_in = torch.zeros(
                 [1, 1, self.learner.gru_cfg.rnn_hidden_size], dtype=torch.float
@@ -255,6 +271,16 @@ class R2D1Agent(DQNAgent):
                 )
                 next_state, reward, done, _ = self.step(action, hidden_in)
 
+                if self.args.save_experience:
+                    for i in range(state.shape[0]):
+                        state_img = Image.fromarray(state[i])
+                        next_state_img = Image.fromarray(next_state[i])
+                        state_img.save(state_dir + "%d-%d.png" % (test_total_step, i))
+                        next_state_img.save(
+                            next_state_dir + "%d-%d.png" % (test_total_step, i)
+                        )
+                    a_r_d_list.append([test_total_step, action, reward, done])
+
                 hidden_in = hidden_out
                 state = next_state
                 prev_action = common_utils.make_one_hot(
@@ -262,8 +288,10 @@ class R2D1Agent(DQNAgent):
                 )
                 prev_reward = torch.as_tensor(reward).to(device)
                 score += reward
+                test_total_step += 1
                 step += 1
-
+            with open(a_r_d_dir + "ard.pkl", "wb") as f:
+                pickle.dump(a_r_d_list, f)
             print(
                 "[INFO] test %d\tstep: %d\ttotal score: %d" % (i_episode, step, score)
             )
