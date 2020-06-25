@@ -290,8 +290,9 @@ class R2D1Agent(DQNAgent):
                 score += reward
                 test_total_step += 1
                 step += 1
-            with open(a_r_d_dir + "ard.pkl", "wb") as f:
-                pickle.dump(a_r_d_list, f)
+            if self.args.save_experience:
+                with open(a_r_d_dir + "ard.pkl", "wb") as f:
+                    pickle.dump(a_r_d_list, f)
             print(
                 "[INFO] test %d\tstep: %d\ttotal score: %d" % (i_episode, step, score)
             )

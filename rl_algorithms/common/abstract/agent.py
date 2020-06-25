@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 import argparse
 import datetime
 import os
+import pickle
 import shutil
 from typing import Tuple, Union
 
@@ -127,15 +128,13 @@ class Agent(ABC):
             test_num = self.args.episode_num
 
         if self.args.save_experience:
-            if not os.path.isdir("./data/pong/"):
-                NOWTIMES = datetime.datetime.now()
-                curr_time = NOWTIMES.strftime("%y%m%d_%H%M%S")
-                state_dir = "./data/pong/{}/state/".format(curr_time)
-                next_state_dir = "./data/pong/{}/next_state/".format(curr_time)
-                a_r_d_dir = "./data/pong/{}/a_r_d/".format(curr_time)
-                os.makedirs(os.path.join(state_dir))
-                os.makedirs(os.path.join(next_state_dir))
-                os.makedirs(os.path.join(a_r_d_dir))
+            NOWTIMES = datetime.datetime.now()
+            curr_time = NOWTIMES.strftime("%y%m%d_%H%M%S")
+            state_dir = "./data/experience/pong/{}/state/".format(curr_time)
+            next_state_dir = "./data/experience/pong/{}/next_state/".format(curr_time)
+            a_r_d_dir = "./data/experience/pong/{}/".format(curr_time)
+            os.makedirs(os.path.join(state_dir))
+            os.makedirs(os.path.join(next_state_dir))
 
         score_list = []
         a_r_d_list = []
@@ -154,12 +153,12 @@ class Agent(ABC):
                 next_state, reward, done, _ = self.step(action)
 
                 if self.args.save_experience:
-                    for i in range(state.shape[-1]):
+                    for i in range(state.shape[0]):
                         state_img = Image.fromarray(state[i])
                         next_state_img = Image.fromarray(next_state[i])
-                        state_img.save(state_dir + "%d-%d" % (test_total_step, i))
+                        state_img.save(state_dir + "%d-%d.png" % (test_total_step, i))
                         next_state_img.save(
-                            next_state_dir + "%d-%d" % (test_total_step, i)
+                            next_state_dir + "%d-%d.png" % (test_total_step, i)
                         )
                     a_r_d_list.append([action, reward, done])
 
@@ -167,6 +166,10 @@ class Agent(ABC):
                 score += reward
                 step += 1
                 test_total_step += 1
+
+            if self.args.save_experience:
+                with open(a_r_d_dir + "ard.pkl", "wb") as f:
+                    pickle.dump(a_r_d_list, f)
 
             print(
                 "[INFO] test %d\tstep: %d\ttotal score: %d" % (i_episode, step, score)
