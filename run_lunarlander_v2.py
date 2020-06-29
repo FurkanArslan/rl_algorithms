@@ -97,7 +97,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="indicate integration test",
     )
-
+    parser.add_argument(
+        "--save-experience",
+        dest="save_experience",
+        action="store_true",
+        help="save experience",
+    )
     return parser.parse_args()
 
 

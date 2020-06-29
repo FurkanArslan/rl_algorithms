@@ -76,7 +76,7 @@ class IQNLoss:
         quantile_values, quantiles = model.forward_(
             states, head_cfg.configs.n_tau_samples
         )
-
+        actions = actions.view(-1)
         reshaped_actions = actions[:, None].repeat(head_cfg.configs.n_tau_samples, 1)
         chosen_action_quantile_values = quantile_values.gather(
             1, reshaped_actions.long()
