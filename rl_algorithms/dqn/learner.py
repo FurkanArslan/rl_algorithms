@@ -168,3 +168,114 @@ class DQNLearner(Learner):
     def get_policy(self) -> nn.Module:
         """Return model (policy) used for action selection, used only in grad cam."""
         return self.dqn
+
+
+@LEARNERS.register_module
+class OfflineDQNLearner(Learner):
+    """Learner for DQN Agent.
+
+    Attributes:
+        args (argparse.Namespace): arguments including hyperparameters and training settings
+        hyper_params (ConfigDict): hyper-parameters
+        log_cfg (ConfigDict): configuration for saving log and checkpoint
+        dqn (nn.Module): dqn model to predict state Q values
+        dqn_target (nn.Module): target dqn model to predict state Q values
+        dqn_optim (Optimizer): optimizer for training dqn
+
+    """
+
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        env_info: ConfigDict,
+        hyper_params: ConfigDict,
+        log_cfg: ConfigDict,
+        backbone: ConfigDict,
+        head: ConfigDict,
+        optim_cfg: ConfigDict,
+        device: torch.device,
+    ):
+        Learner.__init__(self, args, env_info, hyper_params, log_cfg, device)
+
+        self.backbone_cfg = backbone
+        self.head_cfg = head
+        self.head_cfg.configs.state_size = self.env_info.observation_space.shape
+        self.head_cfg.configs.output_size = self.env_info.action_space.n
+        self.optim_cfg = optim_cfg
+        self.use_n_step = self.hyper_params.n_step > 1
+
+        self._init_network()
+
+    # pylint: disable=attribute-defined-outside-init
+    def _init_network(self):
+        """Initialize networks and optimizers."""
+        self.dqn = Brain(self.backbone_cfg, self.head_cfg).to(self.device)
+        self.dqn_target = Brain(self.backbone_cfg, self.head_cfg).to(self.device)
+        self.loss_fn = build_loss(self.hyper_params.loss_type)
+
+        self.dqn_target.load_state_dict(self.dqn.state_dict())
+
+        # create optimizer
+        self.dqn_optim = optim.Adam(
+            self.dqn.parameters(),
+            lr=self.optim_cfg.lr_dqn,
+            weight_decay=self.optim_cfg.weight_decay,
+            eps=self.optim_cfg.adam_eps,
+        )
+
+        # load the optimizer and model parameters
+        if self.args.load_from is not None:
+            self.load_params(self.args.load_from)
+
+    def update_model(
+        self, experience: Union[TensorTuple, Tuple[TensorTuple]]
+    ) -> Tuple[torch.Tensor, torch.Tensor, list, np.ndarray]:  # type: ignore
+        """Update dqn and dqn target"""
+
+        gamma = self.hyper_params.gamma
+
+        dq_loss_element_wise, q_values = self.loss_fn(
+            self.dqn, self.dqn_target, experience, gamma, self.head_cfg
+        )
+        dq_loss = torch.mean(dq_loss_element_wise)
+        # total loss
+        loss = dq_loss
+
+        self.dqn_optim.zero_grad()
+        loss.backward()
+        clip_grad_norm_(self.dqn.parameters(), self.hyper_params.gradient_clip)
+        self.dqn_optim.step()
+
+        # update target networks
+        common_utils.soft_update(self.dqn, self.dqn_target, self.hyper_params.tau)
+
+        return (loss.item(), q_values.mean().item())
+
+    def save_params(self, n_episode: int):
+        """Save model and optimizer parameters."""
+        params = {
+            "dqn_state_dict": self.dqn.state_dict(),
+            "dqn_target_state_dict": self.dqn_target.state_dict(),
+            "dqn_optim_state_dict": self.dqn_optim.state_dict(),
+        }
+
+        Learner._save_params(self, params, n_episode)
+
+    # pylint: disable=attribute-defined-outside-init
+    def load_params(self, path: str):
+        """Load model and optimizer parameters."""
+        Learner.load_params(self, path)
+
+        params = torch.load(path)
+        self.dqn.load_state_dict(params["dqn_state_dict"])
+        self.dqn_target.load_state_dict(params["dqn_target_state_dict"])
+        self.dqn_optim.load_state_dict(params["dqn_optim_state_dict"])
+        print("[INFO] loaded the model and optimizer from", path)
+
+    def get_state_dict(self) -> OrderedDict:
+        """Return state dicts, mainly for distributed worker."""
+        return self.dqn.state_dict()
+
+    def get_policy(self) -> nn.Module:
+        """Return model (policy) used for action selection."""
+        return self.dqn

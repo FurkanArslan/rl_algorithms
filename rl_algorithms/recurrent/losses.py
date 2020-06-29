@@ -223,7 +223,7 @@ class R2D1C51Loss:
             range(batch_size * sequence_size),
             agent_actions.contiguous().view(batch_size * sequence_size).long(),
         ]
-        log_p = torch.log(log_p.clamp(min=1e-5))
+        log_p = torch.log(log_p.clamp(min=1e-7))
         log_p = log_p.view(batch_size, sequence_size, -1)
         proj_dist = proj_dist.view(batch_size, sequence_size, -1)
         dq_loss_element_wise = -(proj_dist * log_p).sum(-1).mean(1)
