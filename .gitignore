@@ -6,7 +6,7 @@ checkpoint
 .vscode
 MUJOCO_LOG.TXT
 .coverage
-data/experience
+data/experience/
 
 # build
 build

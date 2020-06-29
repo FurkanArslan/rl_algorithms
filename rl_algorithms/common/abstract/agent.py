@@ -19,6 +19,7 @@ import gym
 from gym.spaces import Discrete
 import numpy as np
 import torch
+from tqdm import tqdm
 import wandb
 
 from rl_algorithms.common.grad_cam import GradCAM
@@ -55,7 +56,12 @@ class Agent(ABC):
         self.log_cfg.env_name = env.spec.id if env.spec is not None else env.name
 
         self.total_step = 0
+        self.test_total_step = 0
         self.learner = None
+
+        self.vector_value_list = None
+        self.state_dir = None
+        self.next_state_dir = None
 
         if isinstance(env.action_space, Discrete):
             self.is_discrete = True
@@ -119,6 +125,19 @@ class Agent(ABC):
         # termination
         self.env.close()
 
+    def save_experience(self, state, action, reward, next_state, done):
+        if len(self.env.observation_space.shape) > 2:
+            for i in range(state.shape[0]):
+                state_img = Image.fromarray(state[i])
+                next_state_img = Image.fromarray(next_state[i])
+                state_img.save(self.state_dir + "%d-%d.png" % (self.test_total_step, i))
+                next_state_img.save(
+                    self.next_state_dir + "%d-%d.png" % (self.test_total_step, i)
+                )
+            self.vector_value_list.append([action, reward, done])
+        else:
+            self.vector_value_list.append([state, action, reward, next_state, done])
+
     def _test(self, interim_test: bool = False):
         """Common test routine."""
 
@@ -130,16 +149,29 @@ class Agent(ABC):
         if self.args.save_experience:
             NOWTIMES = datetime.datetime.now()
             curr_time = NOWTIMES.strftime("%y%m%d_%H%M%S")
-            state_dir = "./data/experience/pong/{}/state/".format(curr_time)
-            next_state_dir = "./data/experience/pong/{}/next_state/".format(curr_time)
-            a_r_d_dir = "./data/experience/pong/{}/".format(curr_time)
-            os.makedirs(os.path.join(state_dir))
-            os.makedirs(os.path.join(next_state_dir))
+            if len(self.env.observation_space.shape) > 2:
+                self.state_dir = "./data/experience/{}/{}/state/".format(
+                    self.env_info.env_name, curr_time
+                )
+                self.next_state_dir = "./data/experience/{}/{}/next_state/".format(
+                    self.env_info.env_name, curr_time
+                )
+                vector_value_dir = "./data/experience/{}/{}/a_r_d.pkl".format(
+                    self.env_info.env_name, curr_time
+                )
+                os.makedirs(os.path.join(self.state_dir))
+                os.makedirs(os.path.join(self.next_state_dir))
+            else:
+                vector_value_dir = "./data/experience/{}/{}/experience.pkl".format(
+                    self.env_info.env_name, curr_time
+                )
+            os.makedirs(os.path.join(vector_value_dir))
 
         score_list = []
-        a_r_d_list = []
-        test_total_step = 0
-        for i_episode in range(test_num):
+
+        for i_episode in (
+            tqdm(range(test_num)) if self.args.save_experience else range(test_num)
+        ):
             state = self.env.reset()
             done = False
             score = 0
@@ -153,28 +185,23 @@ class Agent(ABC):
                 next_state, reward, done, _ = self.step(action)
 
                 if self.args.save_experience:
-                    for i in range(state.shape[0]):
-                        state_img = Image.fromarray(state[i])
-                        next_state_img = Image.fromarray(next_state[i])
-                        state_img.save(state_dir + "%d-%d.png" % (test_total_step, i))
-                        next_state_img.save(
-                            next_state_dir + "%d-%d.png" % (test_total_step, i)
-                        )
-                    a_r_d_list.append([action, reward, done])
+                    self.save_experience(state, action, reward, next_state, done)
 
                 state = next_state
                 score += reward
                 step += 1
-                test_total_step += 1
+                self.test_total_step += 1
+            if not self.args.save_experience:
+                print(
+                    "[INFO] test %d\tstep: %d\ttotal score: %d"
+                    % (i_episode, step, score)
+                )
+                score_list.append(score)
 
-            if self.args.save_experience:
-                with open(a_r_d_dir + "ard.pkl", "wb") as f:
-                    pickle.dump(a_r_d_list, f)
-
-            print(
-                "[INFO] test %d\tstep: %d\ttotal score: %d" % (i_episode, step, score)
-            )
-            score_list.append(score)
+        if self.args.save_experience:
+            print("saving...")
+            with open(vector_value_dir, "wb") as f:
+                pickle.dump(self.vector_value_list, f)
 
         if self.args.log:
             wandb.log(
