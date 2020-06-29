@@ -10,27 +10,29 @@ agent = dict(
     hyper_params=dict(
         gamma=0.99,
         tau=5e-3,
-        batch_size=64,  # openai baselines: 32
-        multiple_update=5,  # multiple learning updates
+        batch_size=256,  # openai baselines: 32
+        multiple_update=1,  # multiple learning updates
         from_disk=False,
-        experience_dir="data/experience/LunarLander-v2/200626_092730",
+        experience_dir="data/experience/LunarLander-v2/200626_103729/",
         gradient_clip=10.0,  # dueling: 10.0
         n_step=3,
         w_n_step=1.0,
         w_q_reg=1e-7,
-        loss_type=dict(type="C51Loss"),
+        loss_type=dict(type="IQNLoss"),
     ),
     learner_cfg=dict(
         type="OfflineDQNLearner",
         backbone=dict(),
         head=dict(
-            type="C51DuelingMLP",
+            type="IQNMLP",
             configs=dict(
                 hidden_sizes=[128, 64],
                 use_noisy_net=False,
-                v_min=-300,
-                v_max=300,
-                atom_size=1530,
+                n_tau_samples=16,
+                n_tau_prime_samples=16,
+                n_quantile_samples=32,
+                quantile_embedding_dim=64,
+                kappa=1.0,
                 output_activation=identity,
             ),
         ),

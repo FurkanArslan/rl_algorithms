@@ -10,7 +10,7 @@ from tqdm import tqdm
 from rl_algorithms.common.helper_functions import numpy2floattensor
 
 
-def _image_post_process(batch_state, batch_next_state, batch_ard):
+def image_post_process(batch_state, batch_next_state, batch_ard):
     n, n_s = numpy2floattensor((batch_state, batch_next_state))
     a, r, d = numpy2floattensor(
         (np.array([batch_ard[0]]), np.array([batch_ard[1]]), np.array([batch_ard[2]]),)
@@ -21,7 +21,7 @@ def _image_post_process(batch_state, batch_next_state, batch_ard):
     return n, a, r, n_s, d
 
 
-def _vector_post_process(experience):
+def vector_post_process(experience):
     n, n_s = numpy2floattensor((experience[0], experience[3]))
     a, r, d = numpy2floattensor(
         (
@@ -93,9 +93,9 @@ class SuperviseBuffer(torch.utils.data.Dataset):
                 tmp_next_state = self.next_state_list[idx]
             batch_ard = self.ard_list[idx]
 
-            return self._image_post_process(tmp_state, tmp_next_state, batch_ard)
+            return image_post_process(tmp_state, tmp_next_state, batch_ard)
         else:
-            return self._vector_post_process(self.experience_list[idx])
+            return vector_post_process(self.experience_list[idx])
 
     def __len__(self) -> int:
         if self.is_image:

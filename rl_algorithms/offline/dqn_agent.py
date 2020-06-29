@@ -86,7 +86,7 @@ class OfflineDQNAgent(Agent):
             self.hyper_params.experience_dir, self.hyper_params.from_disk
         )
         self.dataloader = DataLoader(
-            self.dataset, self.hyper_params.batch_size, shuffle=False
+            self.dataset, self.hyper_params.batch_size, shuffle=True
         )
         self._initialize()
 
@@ -175,7 +175,7 @@ class OfflineDQNAgent(Agent):
                     info = self.learner.update_model(experience)
                     loss = info[0:2]
                     losses.append(loss)  # for logging
-                    if batch_idx > 5:
+                    if batch_idx >= 2000:
                         break
 
             t_end = time.time()
