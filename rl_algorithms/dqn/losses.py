@@ -37,9 +37,11 @@ class IQNLoss:
         batch_size = states.shape[0]
 
         # size of rewards: (n_tau_prime_samples x batch_size) x 1.
+        rewards = rewards.view(-1, 1)
         rewards = rewards.repeat(head_cfg.configs.n_tau_prime_samples, 1)
 
         # size of gamma_with_terminal: (n_tau_prime_samples x batch_size) x 1.
+        dones = dones.view(-1, 1)
         masks = 1 - dones
         gamma_with_terminal = masks * gamma
         gamma_with_terminal = gamma_with_terminal.repeat(
