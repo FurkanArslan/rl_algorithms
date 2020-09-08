@@ -1,18 +1,27 @@
 # -*- coding: utf-8 -*-
-"""Train or test algorithms on LunarLanderContinuous-v2.
+"""Train or test algorithms on Genius-v0.
 
-- Author: Curt Park
-- Contact: curt.park@medipixel.io
+- Author: Furkan Arslan
+- Contact: furkan.arslan@ozu.edu.tr
 """
 
 import argparse
 import datetime
+from os import environ, getpid
 
+from flask import Flask, request
+from flask_cors import cross_origin
 import gym
 
 from rl_algorithms import build_agent
+from rl_algorithms.common.abstract.agent import Agent
 import rl_algorithms.common.helper_functions as common_utils
 from rl_algorithms.utils import Config
+
+# app instance
+app = Flask(__name__)
+
+geniusAgent: Agent
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,7 +88,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
+def get_agent() -> Agent:
     """Main."""
     args = parse_args()
 
@@ -110,12 +119,80 @@ def main():
     cfg.agent.log_cfg = dict(agent=cfg.agent.type, curr_time=curr_time)
     build_args = dict(args=args, env=env)
     agent = build_agent(cfg.agent, build_args)
+    agent.start_training()
 
-    if not args.test:
-        agent.train()
-    else:
-        agent.test()
+    return agent
+
+
+@app.route("/reset", methods=["POST"])
+@cross_origin()
+def reset():
+    # Convert data to python dictionary.
+    data = request.get_json()
+    # Get the state from the data.
+    state = data["state"][0]
+
+    geniusAgent.start_episode(state)
+
+    return "success"
+
+
+@app.route("/getAction", methods=["POST"])
+@cross_origin()
+def getAction():
+    # Convert data to python dictionary.
+    data = request.get_json()
+    # Get the state from the data.
+    state = data["state"][0]
+
+    action = geniusAgent.select_action(state)
+    lastAction = (action + 1) / 2
+
+    return str(lastAction[0])
+
+
+@app.route("/postToMemory", methods=["POST"])
+@cross_origin()
+def postToMemory():
+    # Convert data to python dictionary.
+    data = request.get_json()
+    # Get relevant data.
+    state = data["state"][0]
+    action = data["action"]
+    reward = data["reward"][0]
+    next_state = data["next_state"][0]
+    done = data["done"][0]
+
+    print(data)
+
+    # make one step & update agent parameters
+    geniusAgent.make_one_step(state, action, reward, next_state, done)
+
+    if done:
+        geniusAgent.end_episode(reward)
+
+    return "success"
+
+
+@app.route("/logHistory", methods=["POST"])
+@cross_origin()
+def log_to_history():
+    # Convert data to python dictionary.
+    data = request.get_json()
+    # Get relevant data.
+    reward = data["utility"][0]
+
+    geniusAgent.log_opponent_utility(reward)
+
+    return "success"
 
 
 if __name__ == "__main__":
-    main()
+    geniusAgent = get_agent()
+
+    print(">>", "starting debug environment", "[%s]" % getpid())
+
+    app.debug = False  # non refreshing
+    host = environ.get("IP", "localhost")
+    port = int(environ.get("PORT", 5001))
+    app.run(host=host, port=port)

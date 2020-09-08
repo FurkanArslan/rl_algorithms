@@ -51,14 +51,15 @@ class SACLearner(Learner):
     ):
         Learner.__init__(self, args, env_info, hyper_params, log_cfg, device)
 
+        state_dim = self.env_info.observation_space.shape[0] * args.stack_size
+
         self.backbone_cfg = backbone
         self.head_cfg = head
         self.head_cfg.actor.configs.state_size = (
             self.head_cfg.critic_vf.configs.state_size
-        ) = self.env_info.observation_space.shape
+        ) = (state_dim,)
         self.head_cfg.critic_qf.configs.state_size = (
-            self.env_info.observation_space.shape[0]
-            + self.env_info.action_space.shape[0],
+            state_dim + self.env_info.action_space.shape[0],
         )
         self.head_cfg.actor.configs.output_size = self.env_info.action_space.shape[0]
         self.optim_cfg = optim_cfg
