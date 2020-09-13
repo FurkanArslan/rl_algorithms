@@ -9,10 +9,10 @@ setup(
     version="0.0.1",
     author="medipixel",
     author_email="kh.kim@medipixel.io",
-    description="Reinforcement Learning algorithms which are being used for research activities at Medipixel.",
+    description="RL algorithms which are being used for research activities",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/medipixel/rl_algorithms.git",
+    url="https://github.com/FurkanArslan/rl_algorithms.git",
     keywords="reinforcement-learning python machine learning",
     packages=find_packages(),
     classifiers=[

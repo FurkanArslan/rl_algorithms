@@ -109,10 +109,9 @@ def state_dict2numpy(state_dict) -> Dict[str, np.ndarray]:
 
 
 def smoothen_graph(scalars: List[float], weight: float = 0.6) -> List[float]:
-    """Smoothen result graph using exponential moving average formula as TensorBoard.
+    """
+        Smoothen result graph using exponential moving average formula as TensorBoard.
 
-        Reference:
-            https://docs.wandb.com/library/technical-faq#what-formula-do-you-use-for-your-smoothing-algorithm
     """
     last = scalars[0]  # First value in the plot (first timestep)
     smoothed = list()
