@@ -8,7 +8,6 @@
 """
 
 import argparse
-from collections import deque
 import time
 from typing import Tuple
 
@@ -91,20 +90,10 @@ class SACAgent(Agent):
 
         self.learner = build_learner(self.learner_cfg)
 
-        # init stack
-        self.stack_size = self.args.stack_size
-        self.stack_buffer = deque(maxlen=self.args.stack_size)
-        self.stack_buffer_2 = deque(maxlen=self.args.stack_size)
-
-        self.scores = list()
-        self.utilities = list()
-        self.rounds = list()
-        self.opp_utilities = list()
-
     def select_action(self, state: np.ndarray) -> np.ndarray:
         """Select an action from the input space."""
         self.curr_state = state
-        state = self._preprocess_state(state, self.stack_buffer, convert_to_tensor=True)
+        state = self._preprocess_state(state)
 
         # if initial random action should be conducted
         if (
@@ -122,22 +111,9 @@ class SACAgent(Agent):
         return selected_action.detach().cpu().numpy()
 
     # pylint: disable=no-self-use
-    def _preprocess_state(
-        self,
-        state: np.ndarray,
-        stack_buffer: deque,
-        insert_stack=True,
-        convert_to_tensor=False,
-    ) -> torch.Tensor:
+    def _preprocess_state(self, state: np.ndarray) -> torch.Tensor:
         """Preprocess state so that actor selects an action."""
-        if self.stack_size > 1:
-            if insert_stack:
-                stack_buffer.append(state)
-            state = np.asarray(stack_buffer).flatten()
-
-        if convert_to_tensor:
-            state = torch.FloatTensor(state).to(device)
-
+        state = torch.FloatTensor(state).to(device)
         return state
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool, dict]:
@@ -154,53 +130,44 @@ class SACAgent(Agent):
 
         return next_state, reward, done, info
 
-    def add_transition_to_memory(self, state, action, reward, next_state, done):
-        state = self._preprocess_state(state, self.stack_buffer, insert_stack=False)
-        next_state = self._preprocess_state(next_state, self.stack_buffer_2)
-        action = np.asarray(action)
-        transition = (state, action, reward, next_state, done)
-
-        self._add_transition_to_memory(transition)
-
     def _add_transition_to_memory(self, transition: Tuple[np.ndarray, ...]):
         """Add 1 step and n step transitions to memory."""
         self.memory.add(transition)
 
     def write_log(self, log_value: tuple):
         """Write log about loss and score"""
-        utility, loss, score, policy_update_freq, avg_time_cost = log_value
-        total_loss = loss.sum() if loss is not None else 0
+        i, loss, score, policy_update_freq, avg_time_cost = log_value
+        total_loss = loss.sum()
+
+        print(
+            "[INFO] episode %d, episode_step %d, total step %d, total score: %d\n"
+            "total loss: %.3f actor_loss: %.3f qf_1_loss: %.3f qf_2_loss: %.3f "
+            "vf_loss: %.3f alpha_loss: %.3f (spent %.6f sec/step)\n"
+            % (
+                i,
+                self.episode_step,
+                self.total_step,
+                score,
+                total_loss,
+                loss[0] * policy_update_freq,  # actor loss
+                loss[1],  # qf_1 loss
+                loss[2],  # qf_2 loss
+                loss[3],  # vf loss
+                loss[4],  # alpha loss
+                avg_time_cost,
+            )
+        )
 
         if self.args.log:
-            log = (
-                "[INFO] episode %d, episode_step %d, total step %d, total score: %.3f"
-                " utility: %.3f total loss: %.3f (spent %.6f sec/step)"
-                % (
-                    self.i_episode,
-                    self.episode_step,
-                    self.total_step,
-                    score,
-                    utility,
-                    total_loss,
-                    avg_time_cost,
-                )
-            )
-
-            self._write_log_file(log)
-
             wandb.log(
                 {
                     "score": score,
-                    "utility": utility,
-                    "round": self.episode_step,
                     "total loss": total_loss,
-                    "actor loss": loss[0] * policy_update_freq
-                    if loss is not None
-                    else 0,  # actor loss,
-                    "qf_1 loss": loss[1] if loss is not None else 0,  # qf_1 loss
-                    "qf_2 loss": loss[2] if loss is not None else 0,  # qf_2 loss
-                    "vf loss": loss[3] if loss is not None else 0,  # vf loss
-                    "alpha loss": loss[4] if loss is not None else 0,  # alpha loss
+                    "actor loss": loss[0] * policy_update_freq,
+                    "qf_1 loss": loss[1],
+                    "qf_2 loss": loss[2],
+                    "vf loss": loss[3],
+                    "alpha loss": loss[4],
                     "time per each step": avg_time_cost,
                 }
             )
@@ -210,16 +177,15 @@ class SACAgent(Agent):
         """Pretraining steps."""
         pass
 
-    def start_training(self):
-        # logger
-        if self.args.log:
-            self.set_wandb()
-
     def train(self):
         """Train the agent."""
         # logger
         if self.args.log:
             self.set_wandb()
+            # wandb.watch([self.actor, self.vf, self.qf_1, self.qf_2], log="parameters")
+
+        # pre-training if needed
+        self.pretrain()
 
         for self.i_episode in range(1, self.args.episode_num + 1):
             state = self.env.reset()
@@ -274,106 +240,14 @@ class SACAgent(Agent):
         self.learner.save_params(self.i_episode)
         self.interim_test()
 
+    def start_training(self):
+        pass
+
     def start_episode(self, state):
-        self.score = 0
-        self.episode_step = 0
-        self.loss_episode = list()
-
-        self.t_begin = time.time()
-
-        if self.stack_size > 1:
-            for _ in range(self.stack_size):
-                self.stack_buffer.append(state)
-            for _ in range(self.stack_size):
-                self.stack_buffer_2.append(state)
-
-        self.i_episode += 1
-
-        self._write_log_file("**** Starting - " + str(self.i_episode) + " ****")
-
-    def make_one_step(self, curr_state, action, reward, next_state, done):
-        self.total_step += 1
-        self.episode_step += 1
-
-        log = (
-            "[INFO] Step -"
-            + str(self.episode_step)
-            + ":"
-            + " state: "
-            + str(curr_state)
-            + " next_state: "
-            + str(next_state)
-            + " action: "
-            + str(action[0])
-            + " reward: "
-            + str(reward)
-            + " done:"
-            + str(done)
-        )
-
-        self._write_log_file(log)
-
-        self.add_transition_to_memory(curr_state, action, reward, next_state, done)
-
-        self.score += reward
-
-        if len(self.memory) >= self.hyper_params.batch_size:
-            for _ in range(self.hyper_params.multiple_update):
-                experience = self.memory.sample()
-                experience = numpy2floattensor(experience)
-                loss = self.learner.update_model(experience)
-                self.loss_episode.append(loss)  # for logging
+        pass
 
     def end_episode(self, utility):
-        t_end = time.time()
-        avg_time_cost = (t_end - self.t_begin) / self.episode_step
+        pass
 
-        self.scores.append(self.score)
-        self.utilities.append(utility)
-        self.rounds.append(self.episode_step)
-
-        if self.loss_episode:
-            avg_loss = np.vstack(self.loss_episode).mean(axis=0)
-        else:
-            avg_loss = None
-
-        log_value = (
-            utility,
-            avg_loss,
-            self.score,
-            self.hyper_params.policy_update_freq,
-            avg_time_cost,
-        )
-
-        self.write_log(log_value)
-
-        if self.i_episode % self.args.save_period == 0:
-            if self.hyper_params.initial_random_action >= self.i_episode:
-                self.save_params(self.i_episode)
-
-            wandb.log(
-                {
-                    "mean_scores": np.vstack(self.scores).mean(axis=0),
-                    "mean_utilities": np.vstack(self.utilities).mean(axis=0),
-                    "mean_rounds": np.vstack(self.rounds).mean(axis=0),
-                    "mean_opp_utilities": np.vstack(self.opp_utilities).mean(axis=0),
-                },
-                step=self.i_episode,
-            )
-
-            self.scores = list()
-            self.utilities = list()
-            self.rounds = list()
-            self.opp_utilities = list()
-
-    def log_opponent_utility(self, utility):
-        self.opp_utilities.append(utility)
-
-        wandb.log({"opp_utility": utility}, step=self.i_episode)
-
-    def _write_log_file(self, log):
-        if self.args.log:
-            with open(self.log_filename, "a") as file:
-                file.write(log + "\n")
-
-            wandb.save(self.log_filename)
+    def make_one_step(self, state, action, reward, next_state, done):
+        pass

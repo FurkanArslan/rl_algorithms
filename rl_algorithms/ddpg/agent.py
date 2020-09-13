@@ -47,18 +47,6 @@ class DDPGAgent(Agent):
 
     """
 
-    def start_training(self):
-        pass
-
-    def start_episode(self, state):
-        pass
-
-    def end_episode(self, utility):
-        pass
-
-    def make_one_step(self, state, action, reward, next_state, done):
-        pass
-
     def __init__(
         self,
         env: gym.Env,
