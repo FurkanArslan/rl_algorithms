@@ -85,7 +85,7 @@ class SACAgent(Agent):
         if not self.args.test:
             # replay memory
             self.memory = ReplayBuffer(
-                self.hyper_params.buffer_size, self.hyper_params.batch_size
+                self.hyper_params.sac_buffer_size, self.hyper_params.sac_batch_size
             )
 
         self.learner = build_learner(self.learner_cfg)
@@ -209,7 +209,7 @@ class SACAgent(Agent):
                 score += reward
 
                 # training
-                if len(self.memory) >= self.hyper_params.batch_size:
+                if len(self.memory) >= self.hyper_params.sac_batch_size:
                     for _ in range(self.hyper_params.multiple_update):
                         experience = self.memory.sample()
                         experience = numpy2floattensor(experience)

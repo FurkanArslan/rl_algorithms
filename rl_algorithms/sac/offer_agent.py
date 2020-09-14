@@ -70,6 +70,10 @@ class SACAgent2(SACAgent):
         )
 
         # if initial random action should be conducted
+        if self.episode_step == 0 or self.episode_step == 1:
+            return np.array([1])
+
+        # if initial random action should be conducted
         if (
             self.total_step < self.hyper_params.initial_random_action
             and not self.args.test
@@ -125,6 +129,8 @@ class SACAgent2(SACAgent):
 
         self._add_transition_to_memory(transition)
 
+        return transition
+
     def _add_transition_to_memory(self, transition: Tuple[np.ndarray, ...]):
         """Add 1 step and n step transitions to memory."""
         self.memory.add(transition)
@@ -165,72 +171,14 @@ class SACAgent2(SACAgent):
                     "vf loss": loss[3] if loss is not None else 0,  # vf loss
                     "alpha loss": loss[4] if loss is not None else 0,  # alpha loss
                     "time per each step": avg_time_cost,
-                }
+                },
+                step=self.i_episode,
             )
 
     def start_training(self):
         # logger
         if self.args.log:
             self.set_wandb()
-
-    def train(self):
-        """Train the agent."""
-        # logger
-        if self.args.log:
-            self.set_wandb()
-
-        for self.i_episode in range(1, self.args.episode_num + 1):
-            state = self.env.reset()
-            done = False
-            score = 0
-            self.episode_step = 0
-            loss_episode = list()
-
-            t_begin = time.time()
-
-            while not done:
-                if self.args.render and self.i_episode >= self.args.render_after:
-                    self.env.render()
-
-                action = self.select_action(state)
-                next_state, reward, done, _ = self.step(action)
-                self.total_step += 1
-                self.episode_step += 1
-
-                state = next_state
-                score += reward
-
-                # training
-                if len(self.memory) >= self.hyper_params.batch_size:
-                    for _ in range(self.hyper_params.multiple_update):
-                        experience = self.memory.sample()
-                        experience = numpy2floattensor(experience)
-                        loss = self.learner.update_model(experience)
-                        loss_episode.append(loss)  # for logging
-
-            t_end = time.time()
-            avg_time_cost = (t_end - t_begin) / self.episode_step
-
-            # logging
-            if loss_episode:
-                avg_loss = np.vstack(loss_episode).mean(axis=0)
-                log_value = (
-                    self.i_episode,
-                    avg_loss,
-                    score,
-                    self.hyper_params.policy_update_freq,
-                    avg_time_cost,
-                )
-                self.write_log(log_value)
-
-            if self.i_episode % self.args.save_period == 0:
-                self.learner.save_params(self.i_episode)
-                self.interim_test()
-
-        # termination
-        self.env.close()
-        self.learner.save_params(self.i_episode)
-        self.interim_test()
 
     def start_episode(self, state):
         self.score = 0
@@ -253,28 +201,28 @@ class SACAgent2(SACAgent):
         self.total_step += 1
         self.episode_step += 1
 
+        transaction = self.add_transition_to_memory(
+            curr_state, action, reward, next_state, done
+        )
+
+        self.score += reward
+
         log = (
-            "[OFFER INFO] Step -"
+            "[INFO] Step -"
             + str(self.episode_step)
-            + ": state: "
+            + ":"
+            + " state: "
             + str(curr_state)
             + " next_state: "
             + str(next_state)
-            + " action: "
-            + str(action[0])
-            + " reward: "
-            + str(reward)
-            + " done:"
-            + str(done)
+            + " score: {:.2f}".format(self.score)
+            + " transaction:"
+            + str(transaction)
         )
 
         self._write_log_file(log)
 
-        self.add_transition_to_memory(curr_state, action, reward, next_state, done)
-
-        self.score += reward
-
-        if len(self.memory) >= self.hyper_params.batch_size:
+        if len(self.memory) >= self.hyper_params.sac_batch_size:
             for _ in range(self.hyper_params.multiple_update):
                 experience = self.memory.sample()
                 experience = numpy2floattensor(experience)
@@ -305,7 +253,8 @@ class SACAgent2(SACAgent):
         self.write_log(log_value)
 
         if self.i_episode % self.args.save_period == 0:
-            self.learner.save_params(self.i_episode)
+            if self.total_step >= self.hyper_params.initial_random_action:
+                self.learner.save_params(self.i_episode)
 
             wandb.log(
                 {
@@ -336,7 +285,7 @@ class SACAgent2(SACAgent):
 
     def set_wandb(self):
         wandb.config.update(vars(self.args))
-        wandb.config.update(self.hyper_params)
+        wandb.config.update(self.hyper_params, allow_val_change=True)
 
         shutil.copy(
             self.args.offer_cfg_path, os.path.join(wandb.run.dir, "offer_config.py")
@@ -347,4 +296,4 @@ class SACAgent2(SACAgent):
     def _init_log_file(self):
         logs_name = "logs_" + self.log_cfg.curr_time
 
-        return os.path.join(wandb.run.dir, logs_name + ".txt")
+        return os.path.join(wandb.run.dir, logs_name + ".log")

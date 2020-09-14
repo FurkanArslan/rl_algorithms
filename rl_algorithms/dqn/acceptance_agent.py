@@ -73,9 +73,13 @@ class DQNAgent2(DQNAgent):
             state, self.stack_buffer, convert_to_tensor=True
         )
 
+        # if initial random action should be conducted
+        if self.episode_step == 0 or self.episode_step == 1:
+            return np.array([0])
+
         # epsilon greedy policy
         if not self.args.test and self.epsilon > np.random.random():
-            selected_action = np.array(self.env.action_space.sample())
+            selected_action = np.array([self.env.action_space.sample()])
         else:
             with torch.no_grad():
                 selected_action = self.learner.dqn(state).argmax()
@@ -143,77 +147,9 @@ class DQNAgent2(DQNAgent):
                     "avg q values": loss[1],
                     "time per each step": avg_time_cost,
                     "total_step": self.total_step,
-                }
+                },
+                step=self.i_episode,
             )
-
-    def train(self):
-        """Train the agent."""
-        # logger
-        if self.args.log:
-            self.set_wandb()
-            # wandb.watch([self.dqn], log="parameters")
-
-        # pre-training if needed
-        self.pretrain()
-
-        for self.i_episode in range(1, self.args.episode_num + 1):
-            state = self.env.reset()
-            self.episode_step = 0
-            losses = list()
-            done = False
-            score = 0
-
-            t_begin = time.time()
-
-            while not done:
-                if self.args.render and self.i_episode >= self.args.render_after:
-                    self.env.render()
-                action = self.select_action(state)
-                next_state, reward, done, _ = self.step(action)
-                self.total_step += 1
-                self.episode_step += 1
-
-                if len(self.memory) >= self.hyper_params.update_starts_from:
-                    if self.total_step % self.hyper_params.train_freq == 0:
-                        for _ in range(self.hyper_params.multiple_update):
-                            experience = self.sample_experience()
-                            info = self.learner.update_model(experience)
-                            loss = info[0:2]
-                            indices, new_priorities = info[2:4]
-                            losses.append(loss)  # for logging
-                            self.memory.update_priorities(indices, new_priorities)
-
-                    # decrease epsilon
-                    self.epsilon = max(
-                        self.epsilon
-                        - (self.max_epsilon - self.min_epsilon)
-                        * self.hyper_params.epsilon_decay,
-                        self.min_epsilon,
-                    )
-
-                    # increase priority beta
-                    fraction = min(float(self.i_episode) / self.args.episode_num, 1.0)
-                    self.per_beta = self.per_beta + fraction * (1.0 - self.per_beta)
-
-                state = next_state
-                score += reward
-
-            t_end = time.time()
-            avg_time_cost = (t_end - t_begin) / self.episode_step
-
-            if losses:
-                avg_loss = np.vstack(losses).mean(axis=0)
-                log_value = (self.i_episode, avg_loss, score, avg_time_cost)
-                self.write_log(log_value)
-
-            if self.i_episode % self.args.save_period == 0:
-                self.learner.save_params(self.i_episode)
-                self.interim_test()
-
-        # termination
-        self.env.close()
-        self.learner.save_params(self.i_episode)
-        self.interim_test()
 
     def start_training(self):
         # logger
@@ -242,34 +178,20 @@ class DQNAgent2(DQNAgent):
 
         if self.loss_episode:
             avg_loss = np.vstack(self.loss_episode).mean(axis=0)
+        else:
+            avg_loss = [0, 0]
 
-            log_value = (utility, avg_loss, self.score, avg_time_cost)
+        log_value = (utility, avg_loss, self.score, avg_time_cost)
 
-            self.write_log(log_value)
+        self.write_log(log_value)
 
         if self.i_episode % self.args.save_period == 0:
-            self.learner.save_params(self.i_episode)
+            if self.total_step >= self.hyper_params.update_starts_from:
+                self.learner.save_params(self.i_episode)
 
     def make_one_step(self, curr_state, action, reward, next_state, done):
         self.total_step += 1
         self.episode_step += 1
-
-        log = (
-            "[OFFER INFO] Step -"
-            + str(self.episode_step)
-            + ": state: "
-            + str(curr_state)
-            + " next_state: "
-            + str(next_state)
-            + " action: "
-            + str(action[0])
-            + " reward: "
-            + str(reward)
-            + " done:"
-            + str(done)
-        )
-
-        self._write_log_file(log)
 
         self.add_transition_to_memory(curr_state, action, reward, next_state, done)
 
@@ -306,7 +228,7 @@ class DQNAgent2(DQNAgent):
 
     def set_wandb(self):
         wandb.config.update(vars(self.args))
-        wandb.config.update(self.hyper_params)
+        wandb.config.update(self.hyper_params, allow_val_change=True)
 
         shutil.copy(
             self.args.acceptance_cfg_path, os.path.join(wandb.run.dir, "ac_config.py")
@@ -317,4 +239,4 @@ class DQNAgent2(DQNAgent):
     def _init_log_file(self):
         logs_name = "logs_" + self.log_cfg.curr_time
 
-        return os.path.join(wandb.run.dir, logs_name + ".txt")
+        return os.path.join(wandb.run.dir, logs_name + ".log")
