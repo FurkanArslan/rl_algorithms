@@ -10,6 +10,7 @@ from .common.networks.backbones import CNN, ResNet
 from .ddpg.agent import DDPGAgent
 from .ddpg.learner import DDPGLearner
 from .distillation.dqn_agent import DistillationDQN
+from .dqn.acceptance_agent import DQNAgent2
 from .dqn.agent import DQNAgent
 from .dqn.distributed_logger import DQNLogger
 from .dqn.distributed_worker import DQNWorker
@@ -29,6 +30,7 @@ from .recurrent.losses import R2D1C51Loss, R2D1DQNLoss, R2D1IQNLoss
 from .registry import build_agent, build_her
 from .sac.agent import SACAgent
 from .sac.learner import SACLearner
+from .sac.offer_agent import SACAgent2
 from .td3.agent import TD3Agent
 from .td3.learner import TD3Learner
 
@@ -73,4 +75,6 @@ __all__ = [
     "DQNWorker",
     "DQNLogger",
     "DistillationDQN",
+    "DQNAgent2",
+    "SACAgent2",
 ]

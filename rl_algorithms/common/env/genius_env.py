@@ -42,6 +42,21 @@ class GeniusEnv(gym.Env):
         pass
 
     def __init__(self):
+        self.action_space = spaces.Discrete(2)
+        self.observation_space = _get_observation_space()
+
+
+class GeniusContinuesEnv(gym.Env):
+    def reset(self):
+        pass
+
+    def render(self, mode="human"):
+        pass
+
+    def step(self, action):
+        pass
+
+    def __init__(self):
         self.action_space = spaces.Box(
             low=_LOWEST_VALUE, high=_HIGHEST_VALUE, shape=(1,)
         )

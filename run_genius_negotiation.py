@@ -12,6 +12,7 @@ from os import environ, getpid
 from flask import Flask, request
 from flask_cors import cross_origin
 import gym
+import wandb
 
 from rl_algorithms import build_agent
 from rl_algorithms.common.abstract.agent import Agent
@@ -21,7 +22,8 @@ from rl_algorithms.utils import Config
 # app instance
 app = Flask(__name__)
 
-geniusAgent: Agent
+offerAgent: Agent
+acceptanceAgent: Agent
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,7 +33,16 @@ def parse_args() -> argparse.Namespace:
         "--seed", type=int, default=777, help="random seed for reproducibility"
     )
     parser.add_argument(
-        "--cfg-path", type=str, default="./configs/genius/sac.py", help="config path",
+        "--offer-cfg-path",
+        type=str,
+        default="./configs/genius/sac.py",
+        help="offer config path",
+    )
+    parser.add_argument(
+        "--acceptance-cfg-path",
+        type=str,
+        default="./configs/genius/dqn.py",
+        help="acceptance config path",
     )
     parser.add_argument(
         "--test", dest="test", action="store_true", help="test mode (no training)"
@@ -84,45 +95,91 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--stack-size", type=int, default=4, help="stack size for experience replay"
     )
+    parser.add_argument("--port", type=int, default=1501, help="port")
 
     return parser.parse_args()
 
 
-def get_agent() -> Agent:
-    """Main."""
-    args = parse_args()
-
+def build_env(env_name, seed):
     # env initialization
-    env_name = "Genius-v0"
     env = gym.make(env_name)
 
     # set a random seed
-    common_utils.set_random_seed(args.seed, env)
+    common_utils.set_random_seed(seed, env)
 
-    # run
+    return env
+
+
+def get_config(
+    cfg_path, env, env_name, is_discrete=False, integration_test=False
+) -> Config:
     NOWTIMES = datetime.datetime.now()
     curr_time = NOWTIMES.strftime("%y%m%d_%H%M%S")
 
-    cfg = Config.fromfile(args.cfg_path)
+    cfg = Config.fromfile(cfg_path)
 
     # If running integration test, simplify experiment
-    if args.integration_test:
+    if integration_test:
         cfg = common_utils.set_cfg_for_intergration_test(cfg)
 
     cfg.agent.env_info = dict(
         name=env_name,
         observation_space=env.observation_space,
         action_space=env.action_space,
-        is_discrete=False,
+        is_discrete=is_discrete,
     )
 
     cfg.agent.log_cfg = dict(agent=cfg.agent.type, curr_time=curr_time)
+
+    return cfg
+
+
+def build_agent_from_config(cfg, env) -> Agent:
     build_args = dict(args=args, env=env)
     agent = build_agent(cfg.agent, build_args)
-    agent.start_training()
 
     return agent
 
+
+def build_acceptance_agent() -> Agent:
+    # env initialization
+    env = build_env("Genius-v1", args.seed)
+
+    cfg = get_config(args.acceptance_cfg_path, env, "Genius-v1", is_discrete=True)
+
+    agent = build_agent_from_config(cfg, env)
+
+    return agent
+
+
+def build_offer_agent() -> Agent:
+    # env initialization
+    env = build_env("GeniusContinuous-v1", args.seed)
+
+    cfg = get_config(args.offer_cfg_path, env, "GeniusContinuous-v1", is_discrete=True)
+
+    agent = build_agent_from_config(cfg, env)
+
+    return agent
+
+
+def build_agents() -> (Agent, Agent):
+    """Main."""
+
+    acceptance_agent = build_acceptance_agent()
+    offer_agent = build_offer_agent()
+
+    if args.log:
+        NOWTIMES = datetime.datetime.now()
+        curr_time = NOWTIMES.strftime("%y%m%d_%H%M%S")
+
+        wandb.init(
+            project="genius_negotiation_agent",
+            name=f"SAC-DQN/{curr_time}",
+            group=args.opponent,
+        )
+
+    return acceptance_agent, offer_agent
 
 @app.route("/reset", methods=["POST"])
 @cross_origin()
@@ -132,7 +189,8 @@ def reset():
     # Get the state from the data.
     state = data["state"][0]
 
-    geniusAgent.start_episode(state)
+    offerAgent.start_episode(state)
+    acceptanceAgent.start_episode(state)
 
     return "success"
 
@@ -145,10 +203,17 @@ def getAction():
     # Get the state from the data.
     state = data["state"][0]
 
-    action = geniusAgent.select_action(state)
-    lastAction = (action + 1) / 2
+    ac_action = acceptanceAgent.select_action(state)
 
-    return str(lastAction[0])
+    # opponent offer is not accepted and new offer will be offered
+    if ac_action[0] == 0:
+        action = offerAgent.select_action(state)
+        lastAction = (action + 1) / 2
+
+        return str(lastAction[0])
+
+    # opponent offer is accepted
+    return "-1"
 
 
 @app.route("/postToMemory", methods=["POST"])
@@ -166,10 +231,12 @@ def postToMemory():
     print(data)
 
     # make one step & update agent parameters
-    geniusAgent.make_one_step(state, action, reward, next_state, done)
+    offerAgent.make_one_step(state, action, reward, next_state, done)
+    acceptanceAgent.make_one_step(state, action, reward, next_state, done)
 
     if done:
-        geniusAgent.end_episode(reward)
+        offerAgent.end_episode(reward)
+        acceptanceAgent.end_episode(reward)
 
     return "success"
 
@@ -182,17 +249,22 @@ def log_to_history():
     # Get relevant data.
     reward = data["utility"][0]
 
-    geniusAgent.log_opponent_utility(reward)
+    offerAgent.log_opponent_utility(reward)
 
     return "success"
 
 
 if __name__ == "__main__":
-    geniusAgent = get_agent()
+    args = parse_args()
+
+    acceptanceAgent, offerAgent = build_agents()
+
+    acceptanceAgent.start_training()
+    offerAgent.start_training()
 
     print(">>", "starting debug environment", "[%s]" % getpid())
 
     app.debug = False  # non refreshing
     host = environ.get("IP", "localhost")
-    port = int(environ.get("PORT", 5001))
+    port = int(environ.get("PORT", args.port))
     app.run(host=host, port=port)

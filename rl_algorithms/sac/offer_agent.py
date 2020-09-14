@@ -1,33 +1,31 @@
 # -*- coding: utf-8 -*-
-"""SAC agent for episodic tasks in OpenAI Gym.
+"""SAC agent for continuous tasks in Genius Environment.
 
-- Author: Curt Park
-- Contact: curt.park@medipixel.io
+- Author: Furkan Arslan
+- Contact: furkan.arslan@ozu.edu.tr
 - Paper: https://arxiv.org/pdf/1801.01290.pdf
          https://arxiv.org/pdf/1812.05905.pdf
 """
-
-import argparse
 from collections import deque
+import os
+import shutil
 import time
 from typing import Tuple
 
-import gym
 import numpy as np
 import torch
 import wandb
 
-from rl_algorithms.common.abstract.agent import Agent
-from rl_algorithms.common.buffer.replay_buffer import ReplayBuffer
 from rl_algorithms.common.helper_functions import numpy2floattensor
-from rl_algorithms.registry import AGENTS, build_learner
-from rl_algorithms.utils.config import ConfigDict
+from rl_algorithms.registry import AGENTS
+
+from .agent import SACAgent
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 @AGENTS.register_module
-class SACAgent(Agent):
+class SACAgent2(SACAgent):
     """SAC agent interacting with environment.
 
     Attrtibutes:
@@ -47,49 +45,12 @@ class SACAgent(Agent):
 
     """
 
-    def __init__(
-        self,
-        env: gym.Env,
-        env_info: ConfigDict,
-        args: argparse.Namespace,
-        hyper_params: ConfigDict,
-        learner_cfg: ConfigDict,
-        log_cfg: ConfigDict,
-    ):
-        """Initialize.
-
-        Args:
-            env (gym.Env): openAI Gym environment
-            args (argparse.Namespace): arguments including hyperparameters and training settings
-
-        """
-        Agent.__init__(self, env, env_info, args, log_cfg)
-
-        self.curr_state = np.zeros((1,))
-        self.total_step = 0
-        self.episode_step = 0
-        self.i_episode = 0
-
-        self.hyper_params = hyper_params
-        self.learner_cfg = learner_cfg
-        self.learner_cfg.args = self.args
-        self.learner_cfg.env_info = self.env_info
-        self.learner_cfg.hyper_params = self.hyper_params
-        self.learner_cfg.log_cfg = self.log_cfg
-        self.learner_cfg.device = device
-
-        self._initialize()
-
     # pylint: disable=attribute-defined-outside-init
     def _initialize(self):
         """Initialize non-common things."""
-        if not self.args.test:
-            # replay memory
-            self.memory = ReplayBuffer(
-                self.hyper_params.sac_buffer_size, self.hyper_params.sac_batch_size
-            )
+        self.args.cfg_path = self.args.offer_cfg_path
 
-        self.learner = build_learner(self.learner_cfg)
+        SACAgent._initialize(self)
 
         # init stack
         self.stack_size = self.args.stack_size
@@ -104,7 +65,13 @@ class SACAgent(Agent):
     def select_action(self, state: np.ndarray) -> np.ndarray:
         """Select an action from the input space."""
         self.curr_state = state
-        state = self._preprocess_state(state, self.stack_buffer, convert_to_tensor=True)
+        state = self._preprocess_state2(
+            state, self.stack_buffer, convert_to_tensor=True
+        )
+
+        # if initial random action should be conducted
+        if self.episode_step == 0 or self.episode_step == 1:
+            return np.array([1])
 
         # if initial random action should be conducted
         if (
@@ -122,7 +89,7 @@ class SACAgent(Agent):
         return selected_action.detach().cpu().numpy()
 
     # pylint: disable=no-self-use
-    def _preprocess_state(
+    def _preprocess_state2(
         self,
         state: np.ndarray,
         stack_buffer: deque,
@@ -155,12 +122,14 @@ class SACAgent(Agent):
         return next_state, reward, done, info
 
     def add_transition_to_memory(self, state, action, reward, next_state, done):
-        state = self._preprocess_state(state, self.stack_buffer, insert_stack=False)
-        next_state = self._preprocess_state(next_state, self.stack_buffer_2)
+        state = self._preprocess_state2(state, self.stack_buffer, insert_stack=False)
+        next_state = self._preprocess_state2(next_state, self.stack_buffer_2)
         action = np.asarray(action)
         transition = (state, action, reward, next_state, done)
 
         self._add_transition_to_memory(transition)
+
+        return transition
 
     def _add_transition_to_memory(self, transition: Tuple[np.ndarray, ...]):
         """Add 1 step and n step transitions to memory."""
@@ -173,7 +142,7 @@ class SACAgent(Agent):
 
         if self.args.log:
             log = (
-                "[INFO] episode %d, episode_step %d, total step %d, total score: %.3f"
+                "[OFFER-INFO] episode %d, episode_step %d, total step %d, total score: %.3f"
                 " utility: %.3f total loss: %.3f (spent %.6f sec/step)"
                 % (
                     self.i_episode,
@@ -202,86 +171,129 @@ class SACAgent(Agent):
                     "vf loss": loss[3] if loss is not None else 0,  # vf loss
                     "alpha loss": loss[4] if loss is not None else 0,  # alpha loss
                     "time per each step": avg_time_cost,
-                }
+                },
+                step=self.i_episode,
             )
 
-    # pylint: disable=no-self-use, unnecessary-pass
-    def pretrain(self):
-        """Pretraining steps."""
-        pass
-
     def start_training(self):
         # logger
         if self.args.log:
             self.set_wandb()
-
-    def train(self):
-        """Train the agent."""
-        # logger
-        if self.args.log:
-            self.set_wandb()
-
-        for self.i_episode in range(1, self.args.episode_num + 1):
-            state = self.env.reset()
-            done = False
-            score = 0
-            self.episode_step = 0
-            loss_episode = list()
-
-            t_begin = time.time()
-
-            while not done:
-                if self.args.render and self.i_episode >= self.args.render_after:
-                    self.env.render()
-
-                action = self.select_action(state)
-                next_state, reward, done, _ = self.step(action)
-                self.total_step += 1
-                self.episode_step += 1
-
-                state = next_state
-                score += reward
-
-                # training
-                if len(self.memory) >= self.hyper_params.sac_batch_size:
-                    for _ in range(self.hyper_params.multiple_update):
-                        experience = self.memory.sample()
-                        experience = numpy2floattensor(experience)
-                        loss = self.learner.update_model(experience)
-                        loss_episode.append(loss)  # for logging
-
-            t_end = time.time()
-            avg_time_cost = (t_end - t_begin) / self.episode_step
-
-            # logging
-            if loss_episode:
-                avg_loss = np.vstack(loss_episode).mean(axis=0)
-                log_value = (
-                    self.i_episode,
-                    avg_loss,
-                    score,
-                    self.hyper_params.policy_update_freq,
-                    avg_time_cost,
-                )
-                self.write_log(log_value)
-
-            if self.i_episode % self.args.save_period == 0:
-                self.learner.save_params(self.i_episode)
-                self.interim_test()
-
-        # termination
-        self.env.close()
-        self.learner.save_params(self.i_episode)
-        self.interim_test()
-
-    def start_training(self):
-        pass
 
     def start_episode(self, state):
-        pass
+        self.score = 0
+        self.episode_step = 0
+        self.loss_episode = list()
+
+        self.t_begin = time.time()
+
+        if self.stack_size > 1:
+            for _ in range(self.stack_size):
+                self.stack_buffer.append(state)
+            for _ in range(self.stack_size):
+                self.stack_buffer_2.append(state)
+
+        self.i_episode += 1
+
+        self._write_log_file("**** Starting - " + str(self.i_episode) + " ****")
+
+    def make_one_step(self, curr_state, action, reward, next_state, done):
+        self.total_step += 1
+        self.episode_step += 1
+
+        transaction = self.add_transition_to_memory(
+            curr_state, action, reward, next_state, done
+        )
+
+        self.score += reward
+
+        log = (
+            "[INFO] Step -"
+            + str(self.episode_step)
+            + ":"
+            + " state: "
+            + str(curr_state)
+            + " next_state: "
+            + str(next_state)
+            + " score: {:.2f}".format(self.score)
+            + " transaction:"
+            + str(transaction)
+        )
+
+        self._write_log_file(log)
+
+        if len(self.memory) >= self.hyper_params.sac_batch_size:
+            for _ in range(self.hyper_params.multiple_update):
+                experience = self.memory.sample()
+                experience = numpy2floattensor(experience)
+                loss = self.learner.update_model(experience)
+                self.loss_episode.append(loss)  # for logging
 
     def end_episode(self, utility):
-        pass
+        t_end = time.time()
+        avg_time_cost = (t_end - self.t_begin) / self.episode_step
 
-    def make_one_step(self, state, action, reward, next_state, done):
-        pass
+        self.scores.append(self.score)
+        self.utilities.append(utility)
+        self.rounds.append(self.episode_step)
+
+        if self.loss_episode:
+            avg_loss = np.vstack(self.loss_episode).mean(axis=0)
+        else:
+            avg_loss = None
+
+        log_value = (
+            utility,
+            avg_loss,
+            self.score,
+            self.hyper_params.policy_update_freq,
+            avg_time_cost,
+        )
+
+        self.write_log(log_value)
+
+        if self.i_episode % self.args.save_period == 0:
+            if self.total_step >= self.hyper_params.initial_random_action:
+                self.learner.save_params(self.i_episode)
+
+            wandb.log(
+                {
+                    "mean_scores": np.vstack(self.scores).mean(axis=0),
+                    "mean_utilities": np.vstack(self.utilities).mean(axis=0),
+                    "mean_rounds": np.vstack(self.rounds).mean(axis=0),
+                    "mean_opp_utilities": np.vstack(self.opp_utilities).mean(axis=0),
+                },
+                step=self.i_episode,
+            )
+
+            self.scores = list()
+            self.utilities = list()
+            self.rounds = list()
+            self.opp_utilities = list()
+
+    def log_opponent_utility(self, utility):
+        self.opp_utilities.append(utility)
+
+        wandb.log({"opp_utility": utility}, step=self.i_episode)
+
+    def _write_log_file(self, log):
+        if self.args.log:
+            with open(self.log_filename, "a") as file:
+                file.write(log + "\n")
+
+            wandb.save(self.log_filename)
+
+    def set_wandb(self):
+        wandb.config.update(vars(self.args))
+        wandb.config.update(self.hyper_params, allow_val_change=True)
+
+        shutil.copy(
+            self.args.offer_cfg_path, os.path.join(wandb.run.dir, "offer_config.py")
+        )
+
+        self.log_filename = self._init_log_file()
+
+    def _init_log_file(self):
+        logs_name = "logs_" + self.log_cfg.curr_time
+
+        return os.path.join(wandb.run.dir, logs_name + ".log")
