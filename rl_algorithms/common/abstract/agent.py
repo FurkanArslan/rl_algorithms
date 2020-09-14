@@ -89,6 +89,13 @@ class Agent(ABC):
 
         shutil.copy(self.args.cfg_path, os.path.join(wandb.run.dir, "config.py"))
 
+        self.log_filename = self._init_log_file()
+
+    def _init_log_file(self):
+        logs_name = "logs_" + self.log_cfg.curr_time
+
+        return os.path.join(wandb.run.dir, logs_name + ".txt")
+
     def interim_test(self):
         """Test in the middle of training."""
         self.args.test = True

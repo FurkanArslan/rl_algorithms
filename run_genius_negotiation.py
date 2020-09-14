@@ -181,7 +181,6 @@ def build_agents() -> (Agent, Agent):
 
     return acceptance_agent, offer_agent
 
-
 @app.route("/reset", methods=["POST"])
 @cross_origin()
 def reset():
