@@ -273,15 +273,3 @@ class SACAgent(Agent):
         self.env.close()
         self.learner.save_params(self.i_episode)
         self.interim_test()
-
-    def start_training(self):
-        pass
-
-    def start_episode(self, state):
-        pass
-
-    def end_episode(self, utility):
-        pass
-
-    def make_one_step(self, state, action, reward, next_state, done):
-        pass

@@ -47,9 +47,12 @@ class DQNLearner(Learner):
         device: str,
     ):
         Learner.__init__(self, args, env_info, hyper_params, log_cfg, device)
+
+        state_dim = self.env_info.observation_space.shape[0] * args.stack_size
+
         self.backbone_cfg = backbone
         self.head_cfg = head
-        self.head_cfg.configs.state_size = self.env_info.observation_space.shape
+        self.head_cfg.configs.state_size = (state_dim,)
         self.head_cfg.configs.output_size = self.env_info.action_space.n
         self.optim_cfg = optim_cfg
         self.use_n_step = self.hyper_params.n_step > 1
