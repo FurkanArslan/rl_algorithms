@@ -53,7 +53,6 @@ class Agent(ABC):
 
         self.total_step = 0
         self.learner = None
-        self.log_filename = None
 
         if isinstance(env.action_space, Discrete):
             self.is_discrete = True
@@ -81,20 +80,12 @@ class Agent(ABC):
     def set_wandb(self):
         """Set configuration for wandb logging."""
         wandb.init(
-            project="genius_negotiation_agent",
+            project=self.log_cfg.env_name,
             name=f"{self.log_cfg.agent}/{self.log_cfg.curr_time}",
-            group=self.args.opponent,
         )
         wandb.config.update(vars(self.args))
-
+        wandb.config.update(self.hyper_params)
         shutil.copy(self.args.cfg_path, os.path.join(wandb.run.dir, "config.py"))
-
-        self.log_filename = self._init_log_file()
-
-    def _init_log_file(self):
-        logs_name = "logs_" + self.log_cfg.curr_time
-
-        return os.path.join(wandb.run.dir, logs_name + ".txt")
 
     def interim_test(self):
         """Test in the middle of training."""

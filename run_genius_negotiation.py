@@ -12,6 +12,7 @@ from os import environ, getpid
 from flask import Flask, request
 from flask_cors import cross_origin
 import gym
+import numpy as np
 import wandb
 
 from rl_algorithms import build_agent
@@ -206,12 +207,15 @@ def getAction():
 
     ac_action = acceptanceAgent.select_action(state)
 
-    # opponent offer is not accepted and new offer will be offered
-    if ac_action[0] == 0:
-        action = offerAgent.select_action(state)
-        lastAction = (action + 1) / 2
+    try:
+        # opponent offer is not accepted and new offer will be offered
+        if ac_action == np.array(0):
+            action = offerAgent.select_action(state)
+            lastAction = (action + 1) / 2
 
-        return str(lastAction[0])
+            return str(lastAction[0])
+    except Exception:
+        print("HATA: ", ac_action)
 
     # opponent offer is accepted
     return "-1"
@@ -224,7 +228,8 @@ def postToMemory():
     data = request.get_json()
     # Get relevant data.
     state = data["state"][0]
-    action = data["action"]
+    acAction = data["acAction"][0]
+    offerAction = data["offerAction"]
     reward = data["reward"][0]
     next_state = data["next_state"][0]
     done = data["done"][0]
@@ -232,8 +237,8 @@ def postToMemory():
     print(data)
 
     # make one step & update agent parameters
-    offerAgent.make_one_step(state, action, reward, next_state, done)
-    acceptanceAgent.make_one_step(state, action, reward, next_state, done)
+    offerAgent.make_one_step(state, offerAction, reward, next_state, done)
+    acceptanceAgent.make_one_step(state, acAction, reward, next_state, done)
 
     if done:
         offerAgent.end_episode(reward)

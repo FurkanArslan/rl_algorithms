@@ -48,7 +48,10 @@ class DQNLearner(Learner):
     ):
         Learner.__init__(self, args, env_info, hyper_params, log_cfg, device)
 
-        state_dim = self.env_info.observation_space.shape[0] * args.stack_size
+        if "stack_size" in args:
+            state_dim = self.env_info.observation_space.shape[0] * args.stack_size
+        else:
+            state_dim = self.env_info.observation_space.shape[0]
 
         self.backbone_cfg = backbone
         self.head_cfg = head

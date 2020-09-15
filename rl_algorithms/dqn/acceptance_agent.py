@@ -75,11 +75,11 @@ class DQNAgent2(DQNAgent):
 
         # if initial random action should be conducted
         if self.episode_step == 0 or self.episode_step == 1:
-            return np.array([0])
+            return np.array(0)
 
         # epsilon greedy policy
         if not self.args.test and self.epsilon > np.random.random():
-            selected_action = np.array([self.env.action_space.sample()])
+            selected_action = np.array(self.env.action_space.sample())
         else:
             with torch.no_grad():
                 selected_action = self.learner.dqn(state).argmax()
