@@ -208,7 +208,7 @@ class SACAgent2(SACAgent):
         self.score += reward
 
         log = (
-            "[INFO] Step -"
+            "[OFFER-INFO] Step -"
             + str(self.episode_step)
             + ":"
             + " state: "
@@ -256,15 +256,29 @@ class SACAgent2(SACAgent):
             if self.total_step >= self.hyper_params.initial_random_action:
                 self.learner.save_params(self.i_episode)
 
-            wandb.log(
-                {
-                    "mean_scores": np.vstack(self.scores).mean(axis=0),
-                    "mean_utilities": np.vstack(self.utilities).mean(axis=0),
-                    "mean_rounds": np.vstack(self.rounds).mean(axis=0),
-                    "mean_opp_utilities": np.vstack(self.opp_utilities).mean(axis=0),
-                },
-                step=self.i_episode,
-            )
+            try:
+                wandb.log(
+                    {
+                        "mean_scores": np.vstack(self.scores).mean(axis=0),
+                        "mean_utilities": np.vstack(self.utilities).mean(axis=0),
+                        "mean_rounds": np.vstack(self.rounds).mean(axis=0),
+                        "mean_opp_utilities": np.vstack(self.opp_utilities).mean(
+                            axis=0
+                        ),
+                    },
+                    step=self.i_episode,
+                )
+            except Exception:
+                self._write_log_file("HATA: " + self.episode_step)
+
+                wandb.log(
+                    {
+                        "mean_scores": np.vstack(self.scores).mean(axis=0),
+                        "mean_utilities": np.vstack(self.utilities).mean(axis=0),
+                        "mean_rounds": np.vstack(self.rounds).mean(axis=0),
+                    },
+                    step=self.i_episode,
+                )
 
             self.scores = list()
             self.utilities = list()
@@ -281,8 +295,6 @@ class SACAgent2(SACAgent):
             with open(self.log_filename, "a") as file:
                 file.write(log + "\n")
 
-            wandb.save(self.log_filename)
-
     def set_wandb(self):
         wandb.config.update(vars(self.args))
         wandb.config.update(self.hyper_params, allow_val_change=True)
@@ -291,9 +303,4 @@ class SACAgent2(SACAgent):
             self.args.offer_cfg_path, os.path.join(wandb.run.dir, "offer_config.py")
         )
 
-        self.log_filename = self._init_log_file()
-
-    def _init_log_file(self):
-        logs_name = "logs_" + self.log_cfg.curr_time
-
-        return os.path.join(wandb.run.dir, logs_name + ".log")
+        self.log_filename = os.path.join(wandb.run.dir, "experiment.log")

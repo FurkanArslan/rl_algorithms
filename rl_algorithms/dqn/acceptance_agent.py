@@ -114,6 +114,8 @@ class DQNAgent2(DQNAgent):
 
         self._add_transition_to_memory(transition)
 
+        return transition
+
     def write_log(self, log_value: tuple):
         """Write log about loss and score"""
         utility, loss, score, avg_time_cost = log_value
@@ -193,7 +195,9 @@ class DQNAgent2(DQNAgent):
         self.total_step += 1
         self.episode_step += 1
 
-        self.add_transition_to_memory(curr_state, action, reward, next_state, done)
+        transaction = self.add_transition_to_memory(
+            curr_state, action, reward, next_state, done
+        )
 
         if len(self.memory) >= self.hyper_params.update_starts_from:
             if self.total_step % self.hyper_params.train_freq == 0:
@@ -219,12 +223,25 @@ class DQNAgent2(DQNAgent):
 
         self.score += reward
 
+        log = (
+            "[AC-INFO] Step -"
+            + str(self.episode_step)
+            + ":"
+            + " state: "
+            + str(curr_state)
+            + " next_state: "
+            + str(next_state)
+            + " score: {:.2f}".format(self.score)
+            + " transaction:"
+            + str(transaction)
+        )
+
+        self._write_log_file(log)
+
     def _write_log_file(self, log):
         if self.args.log:
             with open(self.log_filename, "a") as file:
                 file.write(log + "\n")
-
-            wandb.save(self.log_filename)
 
     def set_wandb(self):
         wandb.config.update(vars(self.args))
@@ -234,9 +251,4 @@ class DQNAgent2(DQNAgent):
             self.args.acceptance_cfg_path, os.path.join(wandb.run.dir, "ac_config.py")
         )
 
-        self.log_filename = self._init_log_file()
-
-    def _init_log_file(self):
-        logs_name = "logs_" + self.log_cfg.curr_time
-
-        return os.path.join(wandb.run.dir, logs_name + ".log")
+        self.log_filename = os.path.join(wandb.run.dir, "experiment.log")
