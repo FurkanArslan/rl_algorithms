@@ -12,7 +12,7 @@ agent = dict(
         tau=5e-3,
         sac_buffer_size=int(1e6),
         sac_batch_size=128,
-        initial_random_action=int(1e4),
+        initial_random_action=int(1e5),
         multiple_update=1,  # multiple learning updates
         policy_update_freq=2,
         w_entropy=1e-3,
@@ -27,22 +27,18 @@ agent = dict(
         head=dict(
             actor=dict(
                 type="TanhGaussianDistParams",
-                configs=dict(hidden_sizes=[256, 128, 64], output_activation=identity,),
+                configs=dict(hidden_sizes=[256, 256], output_activation=identity,),
             ),
             critic_vf=dict(
                 type="MLP",
                 configs=dict(
-                    hidden_sizes=[256, 128, 64],
-                    output_activation=identity,
-                    output_size=1,
+                    hidden_sizes=[256, 256], output_activation=identity, output_size=1,
                 ),
             ),
             critic_qf=dict(
                 type="MLP",
                 configs=dict(
-                    hidden_sizes=[256, 128, 64],
-                    output_activation=identity,
-                    output_size=1,
+                    hidden_sizes=[256, 256], output_activation=identity, output_size=1,
                 ),
             ),
         ),

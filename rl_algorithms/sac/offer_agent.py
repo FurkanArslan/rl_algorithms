@@ -256,6 +256,7 @@ class SACAgent2(SACAgent):
             if self.total_step >= self.hyper_params.initial_random_action:
                 self.learner.save_params(self.i_episode)
 
+        if self.i_episode % 250 == 0:
             try:
                 wandb.log(
                     {
