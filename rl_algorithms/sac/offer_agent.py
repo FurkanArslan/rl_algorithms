@@ -49,6 +49,7 @@ class SACAgent2(SACAgent):
     def _initialize(self):
         """Initialize non-common things."""
         self.args.cfg_path = self.args.offer_cfg_path
+        self.args.load_from = self.args.load_offer_from
 
         SACAgent._initialize(self)
 
@@ -127,7 +128,8 @@ class SACAgent2(SACAgent):
         action = np.asarray(action)
         transition = (state, action, reward, next_state, done)
 
-        self._add_transition_to_memory(transition)
+        if not self.args.test:
+            self._add_transition_to_memory(transition)
 
         return transition
 
@@ -198,14 +200,13 @@ class SACAgent2(SACAgent):
         self._write_log_file("**** Starting - " + str(self.i_episode) + " ****")
 
     def make_one_step(self, curr_state, action, reward, next_state, done):
-        self.total_step += 1
+        self.score += reward
         self.episode_step += 1
+        self.total_step += 1
 
         transaction = self.add_transition_to_memory(
             curr_state, action, reward, next_state, done
         )
-
-        self.score += reward
 
         log = (
             "[OFFER-INFO] Step -"
@@ -222,7 +223,7 @@ class SACAgent2(SACAgent):
 
         self._write_log_file(log)
 
-        if len(self.memory) >= self.hyper_params.sac_batch_size:
+        if not self.args.test and len(self.memory) >= self.hyper_params.sac_batch_size:
             for _ in range(self.hyper_params.multiple_update):
                 experience = self.memory.sample()
                 experience = numpy2floattensor(experience)
@@ -230,61 +231,72 @@ class SACAgent2(SACAgent):
                 self.loss_episode.append(loss)  # for logging
 
     def end_episode(self, utility):
-        t_end = time.time()
-        avg_time_cost = (t_end - self.t_begin) / self.episode_step
+        if not self.args.test:
+            t_end = time.time()
+            avg_time_cost = (t_end - self.t_begin) / self.episode_step
 
-        self.scores.append(self.score)
-        self.utilities.append(utility)
-        self.rounds.append(self.episode_step)
+            self.scores.append(self.score)
+            self.utilities.append(utility)
+            self.rounds.append(self.episode_step)
 
-        if self.loss_episode:
-            avg_loss = np.vstack(self.loss_episode).mean(axis=0)
-        else:
-            avg_loss = None
+            if self.loss_episode:
+                avg_loss = np.vstack(self.loss_episode).mean(axis=0)
+            else:
+                avg_loss = None
 
-        log_value = (
-            utility,
-            avg_loss,
-            self.score,
-            self.hyper_params.policy_update_freq,
-            avg_time_cost,
-        )
+            log_value = (
+                utility,
+                avg_loss,
+                self.score,
+                self.hyper_params.policy_update_freq,
+                avg_time_cost,
+            )
 
-        self.write_log(log_value)
+            self.write_log(log_value)
 
-        if self.i_episode % self.args.save_period == 0:
-            if self.total_step >= self.hyper_params.initial_random_action:
-                self.learner.save_params(self.i_episode)
+            if self.i_episode % self.args.save_period == 0:
+                if self.total_step >= self.hyper_params.initial_random_action:
+                    self.learner.save_params(self.i_episode)
 
-        if self.i_episode % 250 == 0:
-            try:
-                wandb.log(
-                    {
-                        "mean_scores": np.vstack(self.scores).mean(axis=0),
-                        "mean_utilities": np.vstack(self.utilities).mean(axis=0),
-                        "mean_rounds": np.vstack(self.rounds).mean(axis=0),
-                        "mean_opp_utilities": np.vstack(self.opp_utilities).mean(
-                            axis=0
-                        ),
-                    },
-                    step=self.i_episode,
-                )
-            except Exception:
-                self._write_log_file("HATA: " + self.episode_step)
+            if self.i_episode % 250 == 0:
+                try:
+                    wandb.log(
+                        {
+                            "mean_scores": np.vstack(self.scores).mean(axis=0),
+                            "mean_utilities": np.vstack(self.utilities).mean(axis=0),
+                            "mean_rounds": np.vstack(self.rounds).mean(axis=0),
+                            "mean_opp_utilities": np.vstack(self.opp_utilities).mean(
+                                axis=0
+                            ),
+                        },
+                        step=self.i_episode,
+                    )
+                except Exception:
+                    self._write_log_file("HATA: " + self.episode_step)
 
-                wandb.log(
-                    {
-                        "mean_scores": np.vstack(self.scores).mean(axis=0),
-                        "mean_utilities": np.vstack(self.utilities).mean(axis=0),
-                        "mean_rounds": np.vstack(self.rounds).mean(axis=0),
-                    },
-                    step=self.i_episode,
-                )
+                    wandb.log(
+                        {
+                            "mean_scores": np.vstack(self.scores).mean(axis=0),
+                            "mean_utilities": np.vstack(self.utilities).mean(axis=0),
+                            "mean_rounds": np.vstack(self.rounds).mean(axis=0),
+                        },
+                        step=self.i_episode,
+                    )
+
+                self.scores = list()
+                self.utilities = list()
+                self.rounds = list()
+                self.opp_utilities = list()
+        elif self.i_episode % 250 == 0:
+            wandb.log(
+                {
+                    "mean_scores": np.vstack(self.scores).mean(axis=0),
+                    "test total step": self.total_step,
+                },
+                step=self.i_episode,
+            )
 
             self.scores = list()
-            self.utilities = list()
-            self.rounds = list()
-            self.opp_utilities = list()
 
     def log_opponent_utility(self, utility):
         self.opp_utilities.append(utility)

@@ -91,16 +91,6 @@ class SACAgent(Agent):
 
         self.learner = build_learner(self.learner_cfg)
 
-        # init stack
-        self.stack_size = self.args.stack_size
-        self.stack_buffer = deque(maxlen=self.args.stack_size)
-        self.stack_buffer_2 = deque(maxlen=self.args.stack_size)
-
-        self.scores = list()
-        self.utilities = list()
-        self.rounds = list()
-        self.opp_utilities = list()
-
     def select_action(self, state: np.ndarray) -> np.ndarray:
         """Select an action from the input space."""
         self.curr_state = state

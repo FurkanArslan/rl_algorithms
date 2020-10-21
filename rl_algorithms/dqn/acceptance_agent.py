@@ -58,6 +58,7 @@ class DQNAgent2(DQNAgent):
         """Initialize non-common things."""
 
         self.args.cfg_path = self.args.acceptance_cfg_path
+        self.args.load_from = self.args.load_acceptance_from
 
         DQNAgent._initialize(self)
 
@@ -112,7 +113,8 @@ class DQNAgent2(DQNAgent):
         action = np.asarray(action)
         transition = (state, action, reward, next_state, done)
 
-        self._add_transition_to_memory(transition)
+        if not self.args.test:
+            self._add_transition_to_memory(transition)
 
         return transition
 
@@ -159,7 +161,6 @@ class DQNAgent2(DQNAgent):
             self.set_wandb()
 
     def start_episode(self, state):
-        DQNAgent.start_episode(self, state)
         self.score = 0
         self.episode_step = 0
         self.loss_episode = list()
@@ -175,53 +176,39 @@ class DQNAgent2(DQNAgent):
         self.i_episode += 1
 
     def end_episode(self, utility):
-        t_end = time.time()
-        avg_time_cost = (t_end - self.t_begin) / self.episode_step
+        if not self.args.test:
+            t_end = time.time()
+            avg_time_cost = (t_end - self.t_begin) / self.episode_step
 
-        if self.loss_episode:
-            avg_loss = np.vstack(self.loss_episode).mean(axis=0)
+            if self.loss_episode:
+                avg_loss = np.vstack(self.loss_episode).mean(axis=0)
+            else:
+                avg_loss = [0, 0]
+
+            log_value = (utility, avg_loss, self.score, avg_time_cost)
+
+            self.write_log(log_value)
+
+            if self.i_episode % self.args.save_period == 0:
+                if self.total_step >= self.hyper_params.update_starts_from:
+                    self.learner.save_params(self.i_episode)
         else:
-            avg_loss = [0, 0]
+            log = "[INFO] test %d\tstep: %d\ttotal score: %.2f" % (
+                self.i_episode,
+                self.episode_step,
+                self.score,
+            )
 
-        log_value = (utility, avg_loss, self.score, avg_time_cost)
-
-        self.write_log(log_value)
-
-        if self.i_episode % self.args.save_period == 0:
-            if self.total_step >= self.hyper_params.update_starts_from:
-                self.learner.save_params(self.i_episode)
+            self._write_log_file(log)
 
     def make_one_step(self, curr_state, action, reward, next_state, done):
-        self.total_step += 1
+        self.score += reward
         self.episode_step += 1
+        self.total_step += 1
 
         transaction = self.add_transition_to_memory(
             curr_state, action, reward, next_state, done
         )
-
-        if len(self.memory) >= self.hyper_params.update_starts_from:
-            if self.total_step % self.hyper_params.train_freq == 0:
-                for _ in range(self.hyper_params.multiple_update):
-                    experience = self.sample_experience()
-                    info = self.learner.update_model(experience)
-                    loss = info[0:2]
-                    indices, new_priorities = info[2:4]
-                    self.loss_episode.append(loss)  # for logging
-                    self.memory.update_priorities(indices, new_priorities)
-
-            # decrease epsilon
-            self.epsilon = max(
-                self.epsilon
-                - (self.max_epsilon - self.min_epsilon)
-                * self.hyper_params.epsilon_decay,
-                self.min_epsilon,
-            )
-
-            # increase priority beta
-            fraction = min(float(self.i_episode) / self.args.episode_num, 1.0)
-            self.per_beta = self.per_beta + fraction * (1.0 - self.per_beta)
-
-        self.score += reward
 
         log = (
             "[AC-INFO] Step -"
@@ -237,6 +224,29 @@ class DQNAgent2(DQNAgent):
         )
 
         self._write_log_file(log)
+
+        if not self.args.test:
+            if len(self.memory) >= self.hyper_params.update_starts_from:
+                if self.total_step % self.hyper_params.train_freq == 0:
+                    for _ in range(self.hyper_params.multiple_update):
+                        experience = self.sample_experience()
+                        info = self.learner.update_model(experience)
+                        loss = info[0:2]
+                        indices, new_priorities = info[2:4]
+                        self.loss_episode.append(loss)  # for logging
+                        self.memory.update_priorities(indices, new_priorities)
+
+                # decrease epsilon
+                self.epsilon = max(
+                    self.epsilon
+                    - (self.max_epsilon - self.min_epsilon)
+                    * self.hyper_params.epsilon_decay,
+                    self.min_epsilon,
+                )
+
+                # increase priority beta
+                fraction = min(float(self.i_episode) / self.args.episode_num, 1.0)
+                self.per_beta = self.per_beta + fraction * (1.0 - self.per_beta)
 
     def _write_log_file(self, log):
         if self.args.log:

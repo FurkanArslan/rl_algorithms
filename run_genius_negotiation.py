@@ -49,7 +49,13 @@ def parse_args() -> argparse.Namespace:
         "--test", dest="test", action="store_true", help="test mode (no training)"
     )
     parser.add_argument(
-        "--load-from",
+        "--load_acceptance_from",
+        type=str,
+        default=None,
+        help="load the saved model and optimizer at the beginning",
+    )
+    parser.add_argument(
+        "--load_offer_from",
         type=str,
         default=None,
         help="load the saved model and optimizer at the beginning",
@@ -211,7 +217,8 @@ def getAction():
         # opponent offer is not accepted and new offer will be offered
         if ac_action == np.array(0):
             action = offerAgent.select_action(state)
-            lastAction = (action + 1) / 2
+            # lastAction = (action + 1) / 2
+            lastAction = action
 
             return str(lastAction[0])
     except Exception:
@@ -233,8 +240,6 @@ def postToMemory():
     reward = data["reward"][0]
     next_state = data["next_state"][0]
     done = data["done"][0]
-
-    print(data)
 
     # make one step & update agent parameters
     offerAgent.make_one_step(state, offerAction, reward, next_state, done)
