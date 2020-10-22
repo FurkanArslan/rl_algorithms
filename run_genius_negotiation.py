@@ -217,10 +217,8 @@ def getAction():
         # opponent offer is not accepted and new offer will be offered
         if ac_action == np.array(0):
             action = offerAgent.select_action(state)
-            # lastAction = (action + 1) / 2
-            lastAction = action
 
-            return str(lastAction[0])
+            return str(action[0])
     except Exception:
         print("HATA: ", ac_action)
 

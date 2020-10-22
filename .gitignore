@@ -6,6 +6,8 @@ checkpoint
 .vscode
 MUJOCO_LOG.TXT
 .coverage
+.DS_Store
+*/.DS_Store
 
 # build
 build

@@ -59,8 +59,13 @@ class DQNAgent2(DQNAgent):
 
         self.args.cfg_path = self.args.acceptance_cfg_path
         self.args.load_from = self.args.load_acceptance_from
+        self.hyper_params.buffer_size = self.hyper_params.dqn_buffer_size
+        self.hyper_params.batch_size = self.hyper_params.dqn_batch_size
 
         DQNAgent._initialize(self)
+
+        del self.hyper_params.buffer_size
+        del self.hyper_params.batch_size
 
         # init stack
         self.stack_size = self.args.stack_size

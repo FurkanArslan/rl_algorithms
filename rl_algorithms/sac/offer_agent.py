@@ -50,8 +50,13 @@ class SACAgent2(SACAgent):
         """Initialize non-common things."""
         self.args.cfg_path = self.args.offer_cfg_path
         self.args.load_from = self.args.load_offer_from
+        self.hyper_params.buffer_size = self.hyper_params.sac_buffer_size
+        self.hyper_params.batch_size = self.hyper_params.sac_batch_size
 
         SACAgent._initialize(self)
+
+        del self.hyper_params.buffer_size
+        del self.hyper_params.batch_size
 
         # init stack
         self.stack_size = self.args.stack_size
@@ -82,12 +87,19 @@ class SACAgent2(SACAgent):
             return np.array(self.env.action_space.sample())
 
         with torch.no_grad():
-            if self.args.test:
-                _, _, _, selected_action, _ = self.learner.actor(state)
-            else:
-                selected_action, _, _, _, _ = self.learner.actor(state)
+            selected_action, _, _, mu, _ = self.learner.actor(state)
 
-        return selected_action.detach().cpu().numpy()
+        if self.args.test:
+            selected_action = mu
+
+        action = selected_action.detach().cpu().numpy()
+
+        if self.args.test:
+            action = action / 2
+        else:
+            action = (action + 1) / 2
+
+        return action
 
     # pylint: disable=no-self-use
     def _preprocess_state2(
