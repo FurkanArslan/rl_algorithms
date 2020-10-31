@@ -137,7 +137,7 @@ class SACAgent2(SACAgent):
     def add_transition_to_memory(self, state, action, reward, next_state, done):
         state = self._preprocess_state2(state, self.stack_buffer, insert_stack=False)
         next_state = self._preprocess_state2(next_state, self.stack_buffer_2)
-        action = np.asarray(action)
+        # action = np.asarray(action)
         transition = (state, action, reward, next_state, done)
 
         if not self.args.test:
@@ -284,7 +284,7 @@ class SACAgent2(SACAgent):
                         step=self.i_episode,
                     )
                 except Exception:
-                    self._write_log_file("HATA: " + self.episode_step)
+                    self._write_log_file("HATA: " + str(self.episode_step))
 
                     wandb.log(
                         {

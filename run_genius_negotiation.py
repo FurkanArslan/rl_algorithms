@@ -240,6 +240,7 @@ def postToMemory():
     done = data["done"][0]
 
     # make one step & update agent parameters
+    offerAction = (np.asarray(offerAction) * 2) - 1
     offerAgent.make_one_step(state, offerAction, reward, next_state, done)
     acceptanceAgent.make_one_step(state, acAction, reward, next_state, done)
 

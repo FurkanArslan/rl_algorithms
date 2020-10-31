@@ -16,3 +16,6 @@ dist
 
 # data
 data/distillation_buffer
+
+#logs
+experiment_logs/*
