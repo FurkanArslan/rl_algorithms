@@ -6,13 +6,13 @@
 from rl_algorithms.common.helper_functions import identity
 
 agent = dict(
-    type="SACAgent2",
+    type="SACAgent3",
     hyper_params=dict(
         gamma=0.99,
         tau=5e-3,
         sac_buffer_size=int(1e6),
         sac_batch_size=128,
-        initial_random_action=int(5e3),
+        initial_random_action=int(1e5),
         multiple_update=1,  # multiple learning updates
         policy_update_freq=2,
         w_entropy=1e-3,

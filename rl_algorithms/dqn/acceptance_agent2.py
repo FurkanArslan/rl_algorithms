@@ -29,7 +29,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 @AGENTS.register_module
-class DQNAgent2(DQNAgent):
+class DQNAgent3(DQNAgent):
     """DQN interacting with environment.
 
     Attribute:
@@ -67,41 +67,30 @@ class DQNAgent2(DQNAgent):
         del self.hyper_params.buffer_size
         del self.hyper_params.batch_size
 
-        # init stack
-        self.stack_size = self.args.stack_size
-        self.stack_buffer = deque(maxlen=self.args.stack_size)
-        self.stack_buffer_2 = deque(maxlen=self.args.stack_size)
+        self.negotiation_thread = []
 
-        self.min_threshold = 1
-
-    def select_action(self, state: np.ndarray, bidUtility: float = 1.0) -> np.ndarray:
+    def select_action(self, state: np.ndarray, next_bid: float = 1.0) -> np.ndarray:
         """Select an action from the input space."""
         self.curr_state = state
-        state = self._preprocess_state2(
-            state, self.stack_buffer, convert_to_tensor=True
-        )
 
         # if initial random action should be conducted
         if self.episode_step == 0 or self.episode_step == 1:
             return np.array(0)
 
-        # epsilon greedy policy
-        if not self.args.test and self.epsilon > np.random.random():
-            random_act = np.random.randint(0, 3)
-
-            if random_act == 0:
-                # selected_action = np.array(self.env.action_space.sample())
-                selected_action = [self.curr_state[1] >= self.min_threshold]
-            elif random_act == 1:
-                selected_action = [self.curr_state[2] >= 0.9]
-            else:
-                selected_action = [self.curr_state[1] >= bidUtility]
+        if self.curr_state[2] >= self.hyper_params.time_threshold:
+            threshold = (
+                max(self.negotiation_thread)
+                if self.hyper_params.acceptance_condition == "MAX"
+                else np.asarray(self.negotiation_thread).mean()
+            )
         else:
-            with torch.no_grad():
-                selected_action = self.learner.dqn(state).argmax()
-            selected_action = selected_action.detach().cpu().numpy()
+            threshold = 1
 
-        return selected_action
+        action = (state[1] >= next_bid) or (
+            state[2] >= self.hyper_params.time_threshold and state[1] >= threshold
+        )
+
+        return [action]
 
     # pylint: disable=no-self-use
     def _preprocess_state2(
@@ -121,17 +110,6 @@ class DQNAgent2(DQNAgent):
             state = torch.FloatTensor(state).to(device)
 
         return state
-
-    def add_transition_to_memory(self, state, action, reward, next_state, done):
-        state = self._preprocess_state2(state, self.stack_buffer, insert_stack=False)
-        next_state = self._preprocess_state2(next_state, self.stack_buffer_2)
-        action = np.asarray(action)
-        transition = (state, action, reward, next_state, done)
-
-        if not self.args.test:
-            self._add_transition_to_memory(transition)
-
-        return transition
 
     def write_log(self, log_value: tuple):
         """Write log about loss and score"""
@@ -183,15 +161,11 @@ class DQNAgent2(DQNAgent):
         self.t_begin = time.time()
         self.min_threshold = min_threshold
 
-        if self.stack_size > 1:
-            for _ in range(self.stack_size):
-                self.stack_buffer.append(state)
-            for _ in range(self.stack_size):
-                self.stack_buffer_2.append(state)
+        self.negotiation_thread = []
 
         self.i_episode += 1
 
-    def end_episode(self, utility):
+    def end_episode(self, utility, ac_action=None):
         if not self.args.test:
             t_end = time.time()
             avg_time_cost = (t_end - self.t_begin) / self.episode_step
@@ -204,10 +178,6 @@ class DQNAgent2(DQNAgent):
             log_value = (utility, avg_loss, self.score, avg_time_cost)
 
             self.write_log(log_value)
-
-            if self.i_episode % self.args.save_period == 0:
-                if self.total_step >= self.hyper_params.update_starts_from:
-                    self.learner.save_params(self.i_episode)
         else:
             log = "[INFO] test %d\tstep: %d\ttotal score: %.2f" % (
                 self.i_episode,
@@ -222,9 +192,7 @@ class DQNAgent2(DQNAgent):
         self.episode_step += 1
         self.total_step += 1
 
-        transaction = self.add_transition_to_memory(
-            curr_state, action, self.score, next_state, done
-        )
+        self.negotiation_thread.append(curr_state[1])
 
         log = (
             "[AC-INFO] Step -"
@@ -235,34 +203,9 @@ class DQNAgent2(DQNAgent):
             + " next_state: "
             + str(next_state)
             + " score: {:.2f}".format(self.score)
-            + " transaction:"
-            + str(transaction)
         )
 
         self._write_log_file(log)
-
-        if not self.args.test:
-            if len(self.memory) >= self.hyper_params.update_starts_from:
-                if self.total_step % self.hyper_params.train_freq == 0:
-                    for _ in range(self.hyper_params.multiple_update):
-                        experience = self.sample_experience()
-                        info = self.learner.update_model(experience)
-                        loss = info[0:2]
-                        indices, new_priorities = info[2:4]
-                        self.loss_episode.append(loss)  # for logging
-                        self.memory.update_priorities(indices, new_priorities)
-
-                # decrease epsilon
-                self.epsilon = max(
-                    self.epsilon
-                    - (self.max_epsilon - self.min_epsilon)
-                    * self.hyper_params.epsilon_decay,
-                    self.min_epsilon,
-                )
-
-                # increase priority beta
-                fraction = min(float(self.i_episode) / self.args.episode_num, 1.0)
-                self.per_beta = self.per_beta + fraction * (1.0 - self.per_beta)
 
     def _write_log_file(self, log):
         if self.args.log:

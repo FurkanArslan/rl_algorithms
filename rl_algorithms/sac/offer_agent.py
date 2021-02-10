@@ -151,7 +151,7 @@ class SACAgent2(SACAgent):
 
     def write_log(self, log_value: tuple):
         """Write log about loss and score"""
-        utility, loss, score, policy_update_freq, avg_time_cost = log_value
+        utility, loss, score, policy_update_freq, avg_time_cost, ac_action = log_value
         total_loss = loss.sum() if loss is not None else 0
 
         if self.args.log:
@@ -171,23 +171,43 @@ class SACAgent2(SACAgent):
 
             self._write_log_file(log)
 
-            wandb.log(
-                {
-                    "score": score,
-                    "utility": utility,
-                    "round": self.episode_step,
-                    "total loss": total_loss,
-                    "actor loss": loss[0] * policy_update_freq
-                    if loss is not None
-                    else 0,  # actor loss,
-                    "qf_1 loss": loss[1] if loss is not None else 0,  # qf_1 loss
-                    "qf_2 loss": loss[2] if loss is not None else 0,  # qf_2 loss
-                    "vf loss": loss[3] if loss is not None else 0,  # vf loss
-                    "alpha loss": loss[4] if loss is not None else 0,  # alpha loss
-                    "time per each step": avg_time_cost,
-                },
-                step=self.i_episode,
-            )
+            try:
+                wandb.log(
+                    {
+                        "score": score,
+                        "utility": utility,
+                        "round": self.episode_step,
+                        "total loss": total_loss,
+                        "actor loss": loss[0] * policy_update_freq
+                        if loss is not None
+                        else 0,  # actor loss,
+                        "qf_1 loss": loss[1] if loss is not None else 0,  # qf_1 loss
+                        "qf_2 loss": loss[2] if loss is not None else 0,  # qf_2 loss
+                        "vf loss": loss[3] if loss is not None else 0,  # vf loss
+                        "alpha loss": loss[4] if loss is not None else 0,  # alpha loss
+                        "time per each step": avg_time_cost,
+                        "ac_action": ac_action,
+                    },
+                    step=self.i_episode,
+                )
+
+            except Exception as err:
+                print(
+                    {
+                        "score": score,
+                        "utility": utility,
+                        "round": self.episode_step,
+                        "total loss": total_loss,
+                        "actor loss": loss[0] * policy_update_freq
+                        if loss is not None
+                        else 0,  # actor loss,
+                        "qf_1 loss": loss[1] if loss is not None else 0,  # qf_1 loss
+                        "qf_2 loss": loss[2] if loss is not None else 0,  # qf_2 loss
+                        "vf loss": loss[3] if loss is not None else 0,  # vf loss
+                        "alpha loss": loss[4] if loss is not None else 0,  # alpha loss
+                        "time per each step": avg_time_cost,
+                    }
+                )
 
     def start_training(self):
         # logger
@@ -242,7 +262,7 @@ class SACAgent2(SACAgent):
                 loss = self.learner.update_model(experience)
                 self.loss_episode.append(loss)  # for logging
 
-    def end_episode(self, utility):
+    def end_episode(self, utility, ac_action):
         if not self.args.test:
             t_end = time.time()
             avg_time_cost = (t_end - self.t_begin) / self.episode_step
@@ -262,13 +282,16 @@ class SACAgent2(SACAgent):
                 self.score,
                 self.hyper_params.policy_update_freq,
                 avg_time_cost,
+                ac_action,
             )
 
             self.write_log(log_value)
 
-            if self.i_episode % self.args.save_period == 0:
-                if self.total_step >= self.hyper_params.initial_random_action:
-                    self.learner.save_params(self.i_episode)
+            if (
+                self.i_episode % self.args.save_period == 0
+                and self.i_episode >= self.hyper_params.initial_random_action
+            ):
+                self.learner.save_params(self.i_episode)
 
             if self.i_episode % 250 == 0:
                 try:

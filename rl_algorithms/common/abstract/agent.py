@@ -60,7 +60,9 @@ class Agent(ABC):
             self.is_discrete = False
 
     @abstractmethod
-    def select_action(self, state: np.ndarray) -> Union[torch.Tensor, np.ndarray]:
+    def select_action(
+        self, state: np.ndarray, bidUtility: float = 1.0
+    ) -> Union[torch.Tensor, np.ndarray]:
         pass
 
     @abstractmethod
@@ -232,10 +234,10 @@ class Agent(ABC):
     def start_training(self):
         pass
 
-    def start_episode(self, state):
+    def start_episode(self, state, min_threshold=None):
         pass
 
-    def end_episode(self, utility):
+    def end_episode(self, utility, ac_action=None):
         pass
 
     def make_one_step(self, state, action, reward, next_state, done):

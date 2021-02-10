@@ -112,7 +112,7 @@ def build_env(env_name, seed):
     env = gym.make(env_name)
 
     # set a random seed
-    common_utils.set_random_seed(seed, env)
+    # common_utils.set_random_seed(seed, env)
 
     return env
 
@@ -196,9 +196,18 @@ def reset():
     data = request.get_json()
     # Get the state from the data.
     state = data["state"][0]
+    minThreshold = data["minThreshold"][0]
 
     offerAgent.start_episode(state)
-    acceptanceAgent.start_episode(state)
+    acceptanceAgent.start_episode(state, minThreshold)
+
+    return "success"
+
+
+@app.route("/resetLog", methods=["POST"])
+@cross_origin()
+def resetLog():
+    offerAgent.start_episode(None)
 
     return "success"
 
@@ -211,19 +220,20 @@ def getAction():
     # Get the state from the data.
     state = data["state"][0]
 
-    ac_action = acceptanceAgent.select_action(state)
+    action = offerAgent.select_action(state.copy())
+    ac_action = acceptanceAgent.select_action(state.copy(), action[0])
 
     try:
         # opponent offer is not accepted and new offer will be offered
         if ac_action == np.array(0):
-            action = offerAgent.select_action(state)
+            # action = offerAgent.select_action(state)
 
-            return str(action[0])
+            return "0," + str(action[0])
     except Exception:
         print("HATA: ", ac_action)
 
     # opponent offer is accepted
-    return "-1"
+    return "1," + str(action[0])
 
 
 @app.route("/postToMemory", methods=["POST"])
@@ -245,8 +255,32 @@ def postToMemory():
     acceptanceAgent.make_one_step(state, acAction, reward, next_state, done)
 
     if done:
-        offerAgent.end_episode(reward)
+        offerAgent.end_episode(reward, acAction)
         acceptanceAgent.end_episode(reward)
+
+    return "success"
+
+
+@app.route("/postToMemory2", methods=["POST"])
+@cross_origin()
+def postToMemory2():
+
+    # make one step & update agent parameters
+    offerAgent.make_one_step(None, None, 0, None, None)
+
+    return "success"
+
+
+@app.route("/endEpisode", methods=["POST"])
+@cross_origin()
+def endEpisode():
+    # Convert data to python dictionary.
+    data = request.get_json()
+    # Get relevant data.
+    reward = data["utility"][0]
+
+    offerAgent.make_one_step(None, None, reward, None, None)
+    offerAgent.end_episode(reward)
 
     return "success"
 

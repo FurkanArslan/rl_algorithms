@@ -118,7 +118,7 @@ class DQNAgent(Agent):
 
         self.learner = build_learner(self.learner_cfg)
 
-    def select_action(self, state: np.ndarray) -> np.ndarray:
+    def select_action(self, state: np.ndarray, bidUtility: float = 1.0) -> np.ndarray:
         """Select an action from the input space."""
         self.curr_state = state
 
